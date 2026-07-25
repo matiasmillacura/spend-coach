@@ -1,0 +1,10 @@
+# App web multiusuario del coach de gastos.
+# Instalar en un entorno virtual:  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+Flask==3.0.3
+Authlib==1.3.2
+requests==2.32.3            # transporte HTTP que usa Authlib para el OAuth de Google
+SQLAlchemy==2.0.36
+anthropic==0.69.0          # cliente oficial de la API de Claude (extractor + coach)
+python-dotenv==1.0.1       # carga variables desde .env en desarrollo local
+gunicorn==23.0.0           # servidor WSGI para producción
+psycopg[binary]==3.2.3     # driver de PostgreSQL (solo se usa en producción)
