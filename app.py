@@ -10,6 +10,7 @@ Ejecutar:
 """
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -18,7 +19,15 @@ import logging
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-import coach_agent
+# Motor del coach: el original (bucle de tool-use a mano, coach_agent.py) o el
+# de LangGraph (coach_agent_lg.py). Misma interfaz responder(); para comparar:
+#   COACH_ENGINE=langgraph python app.py   (o COACH_ENGINE=langgraph en .env)
+from config import config  # importa config PRIMERO: carga el .env (dotenv)
+
+if os.environ.get("COACH_ENGINE", "").lower() == "langgraph":
+    import coach_agent_lg as coach_agent
+else:
+    import coach_agent
 import dashboard
 import db
 from auth import auth_bp, current_user_id, init_auth, login_required

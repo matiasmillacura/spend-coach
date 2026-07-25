@@ -38,6 +38,12 @@ class Config:
     DATABASE_URL = _normalizar_db_url(os.environ.get("DATABASE_URL", "sqlite:///gastos.db"))
     _ES_SQLITE = DATABASE_URL.startswith("sqlite")
 
+    # --- Memoria del agente LangGraph (checkpointer) ---
+    # Archivo SQLite donde LangGraph persiste el estado de cada conversación
+    # (thread por usuario). En producción con Postgres se usaría PostgresSaver
+    # (langgraph-checkpoint-postgres) apuntando a DATABASE_URL.
+    CHECKPOINT_DB = os.environ.get("COACH_CHECKPOINT_DB", "checkpoints.db")
+
     # --- Servidor ---
     HOST = os.environ.get("COACH_HOST", "127.0.0.1")
     PORT = int(os.environ.get("COACH_PORT", "8000"))
