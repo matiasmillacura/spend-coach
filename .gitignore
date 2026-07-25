@@ -1,0 +1,14 @@
+# Secretos y entorno local — NUNCA subir al repo
+.env
+.venv/
+venv/
+
+# Bases de datos locales
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

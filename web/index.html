@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#0a0e18" />
+  <title>Coach de Gastos</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+</head>
+<body>
+
+  <!-- ===================== LOGIN ===================== -->
+  <div id="login-gate" class="gate" hidden>
+    <div class="gate-card">
+      <div class="gate-card__emoji">💰</div>
+      <h1 class="gate-card__title">Coach de Gastos</h1>
+      <p class="gate-card__sub">
+        Conversa con tu coach, registra tu plata sin planillas y mira tu mes de un vistazo.
+      </p>
+      <a id="login-btn" class="btn-primary" href="/login">Entrar con Google</a>
+    </div>
+  </div>
+
+  <!-- ===================== ONBOARDING EXPRESS ===================== -->
+  <div id="onboarding" class="gate" hidden>
+    <div class="gate-card gate-card--left">
+      <div class="gate-card__emoji">👋</div>
+      <h1 class="gate-card__title">Antes de partir</h1>
+      <p class="gate-card__sub">Dos datos y listo — lo demás lo conversas con tu coach.</p>
+
+      <form id="onb-form" class="onb-form" novalidate>
+        <label class="field">
+          <span class="field__label">¿Cómo te decimos?</span>
+          <input id="onb-nombre" class="field__input" type="text" maxlength="40"
+                 placeholder="Tu primer nombre o apodo" autocomplete="given-name" required />
+        </label>
+        <label class="field">
+          <span class="field__label">Tu fecha de nacimiento</span>
+          <input id="onb-fecha" class="field__input" type="date" required />
+        </label>
+        <p id="onb-error" class="field__error" hidden></p>
+        <button class="btn-primary" type="submit">Empezar 🚀</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== APP ===================== -->
+  <div class="app" id="app" hidden>
+
+    <!-- ---------- DASHBOARD (pantalla principal) ---------- -->
+    <section id="view-dash">
+      <header class="topbar">
+        <div>
+          <h1 id="greet-name" class="topbar__title">Hola 👋</h1>
+          <div class="month-nav">
+            <button id="mes-prev" class="month-nav__btn" aria-label="Mes anterior">‹</button>
+            <span id="dash-mes" class="topbar__sub">—</span>
+            <button id="mes-next" class="month-nav__btn" aria-label="Mes siguiente" disabled>›</button>
+          </div>
+        </div>
+        <div class="topbar__actions">
+          <button id="btn-refresh" class="icon-btn" aria-label="Actualizar">⟳</button>
+          <button class="icon-btn js-logout" aria-label="Salir" title="Salir">⎋</button>
+        </div>
+      </header>
+
+      <div id="deficit-alert" class="alert alert--bad" hidden>
+        ⚠️ Estás gastando más de lo que ingresas este mes.
+      </div>
+      <div id="sin-ingreso" class="alert alert--info" hidden>
+        Cuéntale al coach tus ingresos para ver tu balance y ahorro.
+      </div>
+
+      <!-- Hero: balance del mes -->
+      <div class="card hero">
+        <div class="hero__row">
+          <div>
+            <p class="hero__label">Ingresos</p>
+            <p id="fin-ingreso" class="hero__val hero__val--in">$0</p>
+          </div>
+          <div class="hero__sep"></div>
+          <div class="hero__right">
+            <p class="hero__label">Gastos</p>
+            <p id="fin-gasto" class="hero__val hero__val--out">$0</p>
+          </div>
+        </div>
+        <div class="hero__bar"><div id="fin-bar-in" class="hero__bar-fill"></div></div>
+        <div class="hero__foot">
+          <div>
+            <p class="hero__label">Balance del mes</p>
+            <p id="fin-balance" class="hero__balance">$0</p>
+          </div>
+          <span id="fin-tasa" class="badge badge--neutral">—</span>
+        </div>
+        <p id="fin-disponible" class="hero__disp"></p>
+      </div>
+
+      <!-- Mini stats -->
+      <div class="stats">
+        <div class="stat card">
+          <p class="stat__label">Hoy</p>
+          <p id="kpi-hoy" class="stat__value">$0</p>
+        </div>
+        <div class="stat card">
+          <p class="stat__label">Prom./día</p>
+          <p id="kpi-prom" class="stat__value">$0</p>
+        </div>
+        <div class="stat card">
+          <p class="stat__label">Proyección</p>
+          <p id="kpi-proj" class="stat__value">—</p>
+        </div>
+      </div>
+
+      <!-- Insights vs mes anterior -->
+      <div id="insights-card" class="card" hidden>
+        <h2 class="card__title">💡 Cambios notables</h2>
+        <ul id="insights-list" class="insights"></ul>
+      </div>
+
+      <!-- Metas de ahorro -->
+      <div class="card">
+        <h2 class="card__title">🎯 Metas de ahorro</h2>
+        <ul id="metas-list" class="metas"></ul>
+      </div>
+
+      <!-- Presupuestos por categoría -->
+      <div id="ppto-card" class="card" hidden>
+        <h2 class="card__title">🚦 Presupuestos del mes</h2>
+        <ul id="ppto-list" class="regla"></ul>
+      </div>
+
+      <!-- Suscripciones / gastos fijos -->
+      <div id="subs-card" class="card" hidden>
+        <div class="card__head">
+          <h2 class="card__title">🔁 Fijos y suscripciones</h2>
+          <span id="subs-total" class="badge badge--neutral">$0/mes</span>
+        </div>
+        <ul id="subs-list" class="subs"></ul>
+      </div>
+
+      <!-- Regla configurable -->
+      <div class="card">
+        <h2 class="card__title">Regla <span id="regla-nums">50/30/20</span></h2>
+        <ul id="regla-list" class="regla"></ul>
+      </div>
+
+      <!-- Gastos por categoría -->
+      <div class="card">
+        <div class="card__head">
+          <h2 class="card__title">Gastos por categoría</h2>
+          <span id="kpi-var" class="badge badge--neutral">—</span>
+        </div>
+        <div class="donut-wrap">
+          <svg id="donut" viewBox="0 0 120 120" class="donut"></svg>
+          <div class="donut__center">
+            <span class="donut__center-label">Total</span>
+            <span id="donut-total" class="donut__center-value">$0</span>
+          </div>
+        </div>
+        <ul id="cat-legend" class="legend"></ul>
+      </div>
+
+      <!-- Tendencia diaria -->
+      <div class="card">
+        <h2 class="card__title">Tendencia del mes</h2>
+        <svg id="bars" viewBox="0 0 320 120" class="bars" preserveAspectRatio="none"></svg>
+        <p id="bars-caption" class="caption">—</p>
+      </div>
+
+      <!-- Mayor gasto -->
+      <div id="mayor-card" class="card card--highlight" hidden>
+        <h2 class="card__title">Mayor gasto del mes</h2>
+        <div class="mayor">
+          <span id="mayor-monto" class="mayor__monto">$0</span>
+          <span id="mayor-desc" class="mayor__desc">—</span>
+        </div>
+      </div>
+
+      <!-- Coach -->
+      <div class="card card--coach">
+        <h2 class="card__title">💬 Tu coach</h2>
+        <p id="coach-text" class="coach__text">Analizando tus finanzas…</p>
+      </div>
+
+      <div class="spacer"></div>
+    </section>
+
+    <!-- FAB: registrar por chat -->
+    <button id="fab-chat" class="fab" aria-label="Registrar con tu coach">
+      <span class="fab__icon">💬</span><span class="fab__label">Registrar</span>
+    </button>
+
+    <!-- ---------- CHAT (overlay a pantalla completa) ---------- -->
+    <section id="view-chat" class="chat" aria-hidden="true">
+      <header class="chat__top">
+        <button id="btn-back" class="icon-btn" aria-label="Volver al dashboard">←</button>
+        <div>
+          <h1 class="chat__title">Tu coach</h1>
+          <p class="chat__sub">Gastos, ingresos, ahorros y consejos</p>
+        </div>
+      </header>
+
+      <div id="chat-log" class="chat-log"></div>
+
+      <form id="chat-form" class="composer">
+        <input id="foto-input" type="file" accept="image/*" capture="environment" hidden />
+        <button id="btn-foto" class="composer__tool" type="button" aria-label="Foto de boleta">📷</button>
+        <button id="btn-voz" class="composer__tool" type="button" aria-label="Hablar">🎙️</button>
+        <input id="chat-input" class="composer__input" type="text"
+               placeholder="Escríbele a tu coach…" autocomplete="off" />
+        <button class="composer__send" type="submit" aria-label="Enviar">➤</button>
+      </form>
+    </section>
+
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
