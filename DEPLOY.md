@@ -54,10 +54,10 @@ secretos están fuera (`.gitignore` cubre `.env` y `*.db`). Para actualizar:
 
 ## Motor del coach en producción
 
-En producción NO definas `COACH_ENGINE` (usa el motor original): el motor
-LangGraph guarda su memoria en un archivo SQLite (`checkpoints.db`) y el disco
-de Render es efímero — cada redeploy la borraría. Para usar LangGraph en prod
-hay que migrar el checkpointer a Postgres (`langgraph-checkpoint-postgres`).
+`render.yaml` define `COACH_ENGINE=langgraph`: el agente corre sobre LangGraph
+y su memoria vive en Postgres (mismas credenciales de `DATABASE_URL`; las
+tablas del checkpointer se crean solas al primer uso). Para volver al motor
+clásico basta con eliminar esa variable en Render → Environment.
 
 ## Mantención
 

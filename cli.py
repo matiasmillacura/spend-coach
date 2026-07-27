@@ -87,7 +87,6 @@ def main() -> None:
     init_db()
     user_id = get_or_create_demo_user()["id"]
 
-    # Modo one-shot: argumento en la línea de comandos.
     if len(sys.argv) > 1:
         _registrar(user_id, " ".join(sys.argv[1:]))
         return

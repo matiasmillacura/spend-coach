@@ -7,7 +7,8 @@ SQLAlchemy==2.0.36
 anthropic==0.69.0          # cliente oficial de la API de Claude (extractor + coach)
 langchain-anthropic==1.4.8 # chat model de LangChain sobre Claude (extractor_lc, coach_agent_lg)
 langgraph==1.2.9           # grafo de agente prehecho: create_react_agent (coach_agent_lg)
-langgraph-checkpoint-sqlite==3.1.0  # memoria persistente del agente (checkpoints.db)
+langgraph-checkpoint-sqlite==3.1.0  # memoria del agente en desarrollo (checkpoints.db)
+langgraph-checkpoint-postgres==3.1.0  # memoria del agente en producción (sobre DATABASE_URL)
 python-dotenv==1.0.1       # carga variables desde .env en desarrollo local
 gunicorn==23.0.0           # servidor WSGI para producción
 psycopg[binary]==3.2.3     # driver de PostgreSQL (solo se usa en producción)

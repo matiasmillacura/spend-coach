@@ -29,8 +29,7 @@ from db import (
     total_ingresos_variables_rango,
 )
 
-# No proyectar el gasto de fin de mes antes de tener al menos estos días de datos:
-# con muy pocos días la extrapolación lineal es pura especulación.
+# Días mínimos de datos antes de proyectar: con menos, extrapolar es especulación.
 MIN_DIAS_PROYECCION = 4
 
 # Paleta por categoría (coincide con el frontend).
@@ -156,13 +155,11 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
     ahorro_reg = total_ahorro_mes(user_id, anio, mes)
     balance = ingreso - gasto_total
 
-    # Gasto por grupo 50/30/20 (necesidades/deseos).
     grupos = {"necesidades": 0, "deseos": 0}
     for cat, d in por_categoria.items():
         grupos[GRUPO_CATEGORIA.get(cat, "deseos")] += d["total"]
 
     regla = get_regla(user_id)
-    # Reparto real como % del ingreso (si hay ingreso).
     def pct(x):
         return round(x / ingreso * 100) if ingreso > 0 else None
     # En la regla 50/30/20, el "ahorro" es lo que queda tras necesidades y deseos
@@ -179,10 +176,8 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
     # Disponible para gastar sin comerte la meta de ahorro (según la regla).
     disponible = ingreso - objetivo_ahorro_mes - gasto_total if ingreso > 0 else None
 
-    # MODO ARRANQUE: quien llega a mitad de mes declara cuánta plata tiene
-    # disponible ese día (saldo inicial) en vez de reconstruir el mes hacia
-    # atrás. Durante ESE mes, el balance parte del saldo declarado:
-    #   balance = saldo + ingresos variables posteriores − gastos posteriores.
+    # MODO ARRANQUE: quien llega a mitad de mes declara su saldo disponible y el
+    # balance de ESE mes parte de ahí (saldo + ingresos − gastos posteriores).
     # La tasa de ahorro no se calcula (sería engañosa con medio mes fantasma).
     modo_arranque = False
     p = get_perfil(user_id) or {}

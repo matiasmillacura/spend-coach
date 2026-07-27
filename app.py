@@ -19,9 +19,7 @@ import logging
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Motor del coach: el original (bucle de tool-use a mano, coach_agent.py) o el
-# de LangGraph (coach_agent_lg.py). Misma interfaz responder(); para comparar:
-#   COACH_ENGINE=langgraph python app.py   (o COACH_ENGINE=langgraph en .env)
+# Motor del coach: original o LangGraph (COACH_ENGINE=langgraph), misma interfaz responder().
 from config import config  # importa config PRIMERO: carga el .env (dotenv)
 
 if os.environ.get("COACH_ENGINE", "").lower() == "langgraph":
@@ -37,7 +35,6 @@ from extractor import ExtractorError
 
 log = logging.getLogger(__name__)
 
-# Tipos de imagen aceptados para la foto de boleta.
 TIPOS_IMAGEN = {"image/jpeg", "image/png", "image/webp"}
 
 WEB_DIR = Path(__file__).resolve().parent / "web"

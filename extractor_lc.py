@@ -27,22 +27,16 @@ from pydantic import BaseModel, Field
 
 from config import config
 from db import CATEGORIAS
-# Reutilizamos del extractor original: mismo prompt y misma validación chilena,
-# para que la comparación entre ambos enfoques sea 1 a 1.
+# Mismo prompt y validación chilena del original, para comparar 1 a 1.
 from extractor import ExtractorError, _parsear_monto, _prompt
 
 
 class GastoExtraido(BaseModel):
-    """El "input_schema" del original, pero como modelo Pydantic.
-
-    LangChain genera el JSON Schema desde esta clase y Pydantic valida la
-    respuesta: si Claude devolviera un monto no entero o una categoría fuera
-    del enum, falla aquí, no silenciosamente más adelante.
-    """
+    """El "input_schema" del original como modelo Pydantic: LangChain genera el
+    JSON Schema desde la clase y Pydantic valida tipos y enum de la respuesta."""
     es_gasto: bool = Field(description="true si el mensaje describe un gasto real")
     monto: Optional[int] = Field(description="monto en CLP (enteros), o null si no se menciona")
-    # Literal[tuple(...)] construye el enum en runtime desde db.CATEGORIAS
-    # (equivale al "enum": CATEGORIAS del schema escrito a mano).
+    # Enum en runtime desde db.CATEGORIAS (el "enum" del schema escrito a mano).
     categoria: Literal[tuple(CATEGORIAS)]  # type: ignore[valid-type]
     descripcion: str = Field(description="descripción corta del gasto")
     fecha: str = Field(description="fecha del gasto en formato YYYY-MM-DD")
@@ -53,11 +47,8 @@ _llm = None
 
 
 def get_llm():
-    """ChatAnthropic = el "chat model" de LangChain sobre la API de Claude.
-
-    Es la interfaz común del framework: si mañana quisieras probar otro
-    proveedor, cambias esta clase y el resto del código no se toca.
-    """
+    """ChatAnthropic: el chat model de LangChain sobre la API de Claude
+    (interfaz común entre proveedores)."""
     global _llm
     if not config.ANTHROPIC_API_KEY:
         raise ExtractorError(
@@ -74,22 +65,17 @@ def get_llm():
 
 
 def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
-    """Misma firma y mismo contrato que extractor.extraer_gasto.
-
-    Compara: aquí NO hay _TOOL, ni tool_choice, ni bucle sobre resp.content.
-    Todo eso lo hace with_structured_output.
-    """
+    """Misma firma y contrato que extractor.extraer_gasto; _TOOL, tool_choice y
+    el bucle sobre resp.content los reemplaza with_structured_output."""
     hoy = hoy or date.today()
 
-    # El corazón del cambio: pídele al LLM que responda CON esta estructura.
-    # Por debajo, para Claude, LangChain hace lo mismo que extractor.py:
-    # define un tool con el schema de GastoExtraido y fuerza tool_choice.
+    # Por debajo hace lo mismo que extractor.py: define un tool con el schema
+    # de GastoExtraido y fuerza tool_choice.
     structured_llm = get_llm().with_structured_output(GastoExtraido)
 
     try:
         gasto = structured_llm.invoke(_prompt(texto, hoy))  # → GastoExtraido, ya validado
-    # langchain-anthropic usa el SDK anthropic por debajo, así que las
-    # excepciones son las mismas y el manejo de errores no cambia.
+    # langchain-anthropic usa el SDK anthropic por debajo: mismas excepciones.
     except anthropic.AuthenticationError as e:
         raise ExtractorError("La clave de la API de Claude es inválida o fue revocada.") from e
     except anthropic.RateLimitError as e:

@@ -40,17 +40,15 @@ def init_auth(app) -> None:
 
 @auth_bp.route("/login")
 def login():
-    # 1) Login real con Google si está configurado.
     if config.auth_habilitada():
         redirect_uri = url_for("auth.callback", _external=True)
         return oauth.google.authorize_redirect(redirect_uri)
-    # 2) Modo demo: SOLO si está explícitamente permitido (nunca en producción).
+    # Modo demo: SOLO si está explícitamente permitido (nunca en producción).
     if config.demo_permitido():
         u = db.get_or_create_demo_user()
         session.clear()                 # sesión nueva (evita fijación de sesión)
         session["user_id"] = u["id"]
         return redirect("/")
-    # 3) Sin OAuth y sin demo: no hay forma de entrar.
     return ("El login no está disponible: falta configurar el acceso con Google "
             "(GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."), 503
 

@@ -15,6 +15,8 @@ services:
         value: production
       - key: COACH_HTTPS
         value: "1"
+      - key: COACH_ENGINE
+        value: langgraph           # memoria del agente en Postgres (quitar para volver al motor clásico)
       - key: COACH_SECRET_KEY
         generateValue: true          # Render genera una clave fuerte automáticamente
       - key: ANTHROPIC_API_KEY

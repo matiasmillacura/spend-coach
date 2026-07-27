@@ -56,9 +56,8 @@ CATEGORIAS = [
     "otros",           # lo que no calce en lo anterior
 ]
 
-# Clasificación de cada categoría para la regla 50/30/20.
-# "necesidades" = gasto difícil de evitar; "deseos" = gasto discrecional.
-# (El ahorro no es una categoría de gasto: se mide aparte.)
+# Clasificación para la regla 50/30/20: "necesidades" = gasto difícil de evitar,
+# "deseos" = discrecional. (El ahorro no es categoría de gasto: se mide aparte.)
 GRUPO_CATEGORIA = {
     "supermercado": "necesidades",
     "transporte": "necesidades",
@@ -72,10 +71,8 @@ GRUPO_CATEGORIA = {
     "otros": "deseos",
 }
 
-# Pasos del onboarding conversacional, en orden.
 ONBOARDING_PASOS = ["nombre", "nacimiento", "ingresos", "meta", "completo"]
 
-# Regla de presupuesto por defecto (necesidades / deseos / ahorro).
 REGLA_DEFAULT = {"pct_necesidades": 50, "pct_deseos": 30, "pct_ahorro": 20}
 
 # check_same_thread solo aplica a SQLite (servidor multi-hilo).
@@ -244,7 +241,7 @@ def _migrar_legacy_si_aplica() -> None:
         return
     cols = [c["name"] for c in insp.get_columns("gastos")]
     if "user_id" in cols:
-        return  # ya está en el esquema nuevo
+        return
     Base.metadata.create_all(engine)          # asegura la tabla 'users'
     owner = get_or_create_demo_user()
     with engine.begin() as conn:
@@ -264,8 +261,7 @@ def init_db() -> None:
     try:
         Base.metadata.create_all(engine)
     except Exception:
-        # Otro worker pudo crear las tablas al mismo tiempo. Si ya existen, seguimos;
-        # si no, el error es real y se propaga.
+        # Otro worker pudo crear las tablas a la vez; si no existen, el error es real.
         if not sqla_inspect(engine).has_table("users"):
             raise
     # Mini-migración: columnas agregadas a tablas ya existentes (create_all no las añade).
@@ -338,7 +334,7 @@ def get_or_create_user(
                 return {"id": u.id, "email": u.email, "nombre": u.nombre, "foto_url": u.foto_url}
         except IntegrityError:
             if intento == 0:
-                continue  # otro request lo creó entre el SELECT y el INSERT: reintenta
+                continue
             raise
 
 
@@ -817,8 +813,7 @@ def total_ahorro_mes(user_id: int, anio: int, mes: int) -> int:
 
 
 # --- corrección de movimientos (listar / editar / eliminar) ------------------
-# Para que el coach pueda revertir duplicados o corregir montos mal anotados.
-# TODO verifica ownership: solo se toca lo que pertenece al user_id.
+# El coach revierte duplicados o corrige montos; todo verifica ownership (user_id).
 
 def ultimos_ingresos(user_id: int, limite: int = 10) -> list[dict]:
     with session_scope() as s:

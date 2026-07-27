@@ -55,8 +55,8 @@ from langgraph.errors import GraphRecursionError
 from langgraph.prebuilt import create_react_agent
 
 import db
-# Reutilizamos el "dominio" del agente original: mismas tools, mismo system
-# prompt, mismos límites. Solo cambia QUIÉN ejecuta el bucle y QUIÉN recuerda.
+# Mismo dominio del original (tools, system prompt, límites); solo cambia quién
+# ejecuta el bucle y quién recuerda.
 from coach_agent import MAX_HISTORIAL, MAX_TOOL_ROUNDS, TOOLS, _ejecutar_tool, _system_prompt
 from config import config
 from extractor import ExtractorError
@@ -85,42 +85,47 @@ def get_llm() -> ChatAnthropic:
 
 # --- memoria: checkpointer ----------------------------------------------------
 
-_checkpointer: SqliteSaver | None = None
+_checkpointer = None
 
 
-def get_checkpointer() -> SqliteSaver:
-    """Persistencia de estado de LangGraph en SQLite (un archivo aparte de la BD).
+def get_checkpointer():
+    """Persistencia de estado de LangGraph, elegida según DATABASE_URL.
 
-    El checkpointer guarda, por `thread_id`, TODO el estado del grafo tras cada
-    paso: mensajes, tool calls y tool results. Por eso ya no cargamos historial
-    a mano — al invocar con el mismo thread_id, LangGraph "recuerda" solo.
+    Guarda por `thread_id` todo el estado del grafo (mensajes, tool calls y
+    results); por eso ya no se carga historial a mano.
 
-    check_same_thread=False: Flask atiende cada request en un hilo distinto y
-    SqliteSaver serializa el acceso con su propio lock.
-    En producción (Postgres) el equivalente es PostgresSaver sobre DATABASE_URL.
+    - Desarrollo (SQLite): archivo aparte de la BD (COACH_CHECKPOINT_DB).
+      check_same_thread=False porque Flask atiende cada request en un hilo
+      distinto; SqliteSaver serializa el acceso con su propio lock.
+    - Producción (Postgres): mismas tablas de la BD principal, vía pool de
+      conexiones (los hilos de gunicorn no pueden compartir una conexión).
+      setup() crea las tablas del checkpointer si no existen (idempotente).
     """
     global _checkpointer
     if _checkpointer is None:
-        conn = sqlite3.connect(config.CHECKPOINT_DB, check_same_thread=False)
-        _checkpointer = SqliteSaver(conn)
+        if config.DATABASE_URL.startswith("sqlite"):
+            conn = sqlite3.connect(config.CHECKPOINT_DB, check_same_thread=False)
+            _checkpointer = SqliteSaver(conn)
+        else:
+            from langgraph.checkpoint.postgres import PostgresSaver
+            from psycopg_pool import ConnectionPool
+
+            # PostgresSaver espera una URI libpq, sin el "+psycopg" de SQLAlchemy.
+            url = config.DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1)
+            pool = ConnectionPool(url, min_size=1, max_size=4,
+                                  kwargs={"autocommit": True, "prepare_threshold": 0})
+            _checkpointer = PostgresSaver(pool)
+            _checkpointer.setup()
     return _checkpointer
 
 
 def _recortar_historial(state):
-    """pre_model_hook: se ejecuta ANTES de cada llamada al modelo.
+    """pre_model_hook: recorta lo que VE el modelo sin tocar lo persistido.
 
-    El checkpointer acumula la conversación completa (es su gracia), pero
-    enviarla entera a Claude en cada turno sería cada vez más caro. Este hook
-    recorta LO QUE VE EL MODELO sin tocar lo persistido:
-
-    - token_counter=len → contamos mensajes (paridad con MAX_HISTORIAL=20 del
-      original). En producción se contaría tokens reales con el modelo.
-    - strategy="last" → conserva los más recientes.
-    - start_on="human" → nunca deja la ventana empezando en un tool_result
-      huérfano (la API de Claude lo rechazaría). Es el equivalente del
-      `while messages[0].role != "user": pop(0)` del original.
-    - Devolver "llm_input_messages" (y no "messages") = solo cambia la ENTRADA
-      del modelo; el estado guardado queda intacto.
+    token_counter=len cuenta mensajes (paridad con MAX_HISTORIAL del original);
+    start_on="human" evita que la ventana empiece en un tool_result huérfano
+    (la API de Claude lo rechaza); devolver "llm_input_messages" en vez de
+    "messages" deja intacto el estado guardado.
     """
     recortados = trim_messages(
         state["messages"],
@@ -137,14 +142,10 @@ def _recortar_historial(state):
 # --- puente de herramientas ---------------------------------------------------
 
 def _tools_para(user_id: int) -> list[StructuredTool]:
-    """Convierte los TOOLS del agente original en tools de LangChain.
+    """Re-empaqueta los TOOLS del agente original como StructuredTool.
 
-    Lección clave: una "tool" en cualquier framework es solo
-    (nombre + descripción + schema de argumentos + función que la ejecuta).
-    Ya teníamos las cuatro cosas; esto solo las re-empaqueta.
-
-    Nota el closure: cada tool queda ligada al user_id del request, así el
-    modelo jamás decide sobre qué usuario opera (igual que en el original).
+    El closure liga cada tool al user_id del request: el modelo jamás decide
+    sobre qué usuario opera (igual que en el original).
     """
     def _hacer_func(nombre: str):
         def _run(**kwargs) -> str:
@@ -174,9 +175,8 @@ def responder(user_id: int, texto_usuario: str,
 
     llm = get_llm()  # lanza ExtractorError si no hay clave
 
-    # Turno actual: texto simple, o imagen+texto (bloques en formato nativo de
-    # la API de Claude; langchain-anthropic los pasa tal cual). Le fijamos un id
-    # para poder editar este mensaje en el estado después (ver más abajo).
+    # Turno actual: texto, o imagen+texto en bloques nativos de la API de Claude.
+    # El id fijo permite editar este mensaje en el estado después (ver abajo).
     msg_id = str(uuid.uuid4())
     if imagen_b64:
         contenido = [
@@ -193,7 +193,7 @@ def responder(user_id: int, texto_usuario: str,
         texto_persistir = texto_usuario
     turno = HumanMessage(content=contenido, id=msg_id)
 
-    # AQUÍ desaparece el bucle manual: este grafo ES el `for` de coach_agent.py.
+    # El grafo reemplaza el bucle manual de tool-use de coach_agent.py.
     agent = create_react_agent(
         model=llm,
         tools=_tools_para(user_id),
@@ -202,12 +202,10 @@ def responder(user_id: int, texto_usuario: str,
         checkpointer=get_checkpointer(),     # memoria persistente por thread
     )
 
-    # thread_id = usuario: cada usuario es una conversación continua. Fíjate en
-    # que SOLO enviamos el mensaje nuevo — el resto lo aporta el checkpointer.
+    # thread_id = usuario: solo se envía el mensaje nuevo, el resto lo aporta el checkpointer.
     config_run = {
         "configurable": {"thread_id": str(user_id)},
-        # Equivalente a MAX_TOOL_ROUNDS: cada vuelta consume 2 pasos del grafo
-        # (agent + tools), +1 por la respuesta final.
+        # Equivalente a MAX_TOOL_ROUNDS: 2 pasos por vuelta (agent + tools) +1 final.
         "recursion_limit": 2 * MAX_TOOL_ROUNDS + 1,
     }
 
@@ -215,10 +213,9 @@ def responder(user_id: int, texto_usuario: str,
         resultado = agent.invoke({"messages": [turno]}, config_run)
         texto_resp = _texto_final(resultado["messages"][-1].content)
     except GraphRecursionError:
-        # Se agotaron las vueltas (el `else` del for original): no invitar a
-        # repetir — ya se ejecutaron herramientas y repetir duplicaría registros.
+        # Vueltas agotadas: no invitar a repetir — ya corrieron tools y repetir duplicaría registros.
         texto_resp = "Avancé con lo que me pediste. Revisa el dashboard para confirmar 🙂"
-    # LangChain usa el SDK anthropic por debajo: mismas excepciones, mismo trato.
+    # LangChain usa el SDK anthropic por debajo: mismas excepciones.
     except anthropic.AuthenticationError as e:
         raise ExtractorError("La clave de la API de Claude es inválida o fue revocada.") from e
     except anthropic.RateLimitError as e:
@@ -231,11 +228,8 @@ def responder(user_id: int, texto_usuario: str,
     if not texto_resp:
         texto_resp = "Listo 👍"
 
-    # Fotos: igual que el original, la imagen NO se re-envía en turnos futuros.
-    # Como el checkpointer la dejó guardada en el estado, la reemplazamos por su
-    # marcador de texto. update_state usa el reducer de mensajes: mismo id =
-    # sustituir, no agregar. (Editar el pasado del thread — esto es lo que un
-    # checkpointer permite y una lista de mensajes a mano no.)
+    # La imagen NO se re-envía en turnos futuros: se sustituye en el estado por
+    # su marcador de texto (update_state con el mismo id = reemplazar, no agregar).
     if imagen_b64:
         agent.update_state(config_run, {"messages": [HumanMessage(content=texto_persistir, id=msg_id)]})
 
@@ -245,8 +239,7 @@ def responder(user_id: int, texto_usuario: str,
 
 
 def _texto_final(content) -> str:
-    """El .content de un AIMessage puede ser un string o una lista de bloques
-    (equivale al `"".join(b.text for b in resp.content if b.type=="text")` original)."""
+    """El .content de un AIMessage puede ser un string o una lista de bloques."""
     if isinstance(content, str):
         return content.strip()
     partes = [b.get("text", "") for b in content

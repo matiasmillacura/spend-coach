@@ -1,12 +1,9 @@
 """Agente conversacional de coaching financiero (el "cerebro" del chat).
 
-No es un extractor de una sola pasada: es una conversación con memoria y con
-herramientas para leer/escribir los datos del usuario (perfil, ingresos, gastos,
-ahorros, metas, regla 50/30/20). Así el onboarding por pasos, el "¿para qué es
-este ahorro?" y el cuestionar una regla inviable salen de la propia conversación.
-
-Los cálculos (sumas, tasas) son determinísticos en db/dashboard; el LLM conversa,
-clasifica y aconseja, pero no inventa números: se le entrega un resumen real.
+Conversación con memoria y herramientas para leer/escribir los datos del usuario
+(perfil, ingresos, gastos, ahorros, metas, regla 50/30/20). Los cálculos son
+determinísticos en db/dashboard; el LLM conversa, clasifica y aconseja, pero no
+inventa números: se le entrega un resumen real.
 """
 from __future__ import annotations
 
@@ -479,7 +476,6 @@ def responder(user_id: int, texto_usuario: str,
     while messages and messages[0]["role"] != "user":
         messages.pop(0)
 
-    # Turno actual: texto simple, o bloques imagen+texto si viene una foto.
     if imagen_b64:
         contenido = [
             {"type": "image",

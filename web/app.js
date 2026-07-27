@@ -304,7 +304,7 @@ function comprimirImagen(file) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const btnVoz = $("#btn-voz");
 if (!SR) {
-  btnVoz.hidden = true;      // navegador sin soporte (p. ej. Firefox): se oculta
+  btnVoz.hidden = true;      // navegador sin soporte (p. ej. Firefox)
 } else {
   let rec = null, grabando = false;
   btnVoz.addEventListener("click", () => {

@@ -39,9 +39,8 @@ class Config:
     _ES_SQLITE = DATABASE_URL.startswith("sqlite")
 
     # --- Memoria del agente LangGraph (checkpointer) ---
-    # Archivo SQLite donde LangGraph persiste el estado de cada conversación
-    # (thread por usuario). En producción con Postgres se usaría PostgresSaver
-    # (langgraph-checkpoint-postgres) apuntando a DATABASE_URL.
+    # SQLite donde LangGraph persiste el estado por conversación; en producción
+    # con Postgres se usaría PostgresSaver sobre DATABASE_URL.
     CHECKPOINT_DB = os.environ.get("COACH_CHECKPOINT_DB", "checkpoints.db")
 
     # --- Servidor ---
@@ -50,8 +49,7 @@ class Config:
     HTTPS = os.environ.get("COACH_HTTPS", "0") == "1"
 
     # --- Entorno: producción o desarrollo ---
-    # Si no se declara COACH_ENV, se infiere: cualquier indicio de producción
-    # (Postgres o HTTPS) => production; si no, development.
+    # Sin COACH_ENV se infiere: Postgres o HTTPS => production; si no, development.
     _INDICIO_PROD = (not _ES_SQLITE) or HTTPS
     ENV = os.environ.get("COACH_ENV") or ("production" if _INDICIO_PROD else "development")
     IS_PRODUCTION = ENV == "production"
@@ -68,8 +66,7 @@ class Config:
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL_EXTRACTOR = os.environ.get("CLAUDE_MODEL_EXTRACTOR", "claude-haiku-4-5")
     CLAUDE_MODEL_COACH = os.environ.get("CLAUDE_MODEL_COACH", "claude-opus-4-8")
-    # Modelo del chat de coaching (conversación multi-turno con herramientas):
-    # Sonnet equilibra calidad y costo; puedes subirlo a claude-opus-4-8.
+    # Chat de coaching multi-turno: Sonnet equilibra calidad y costo.
     CLAUDE_MODEL_CHAT = os.environ.get("CLAUDE_MODEL_CHAT", "claude-sonnet-4-6")
 
     # --- Google OAuth ---

@@ -101,7 +101,7 @@ def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
             system="Extraes gastos personales y devuelves los datos llamando a la herramienta registrar_gasto.",
             messages=[{"role": "user", "content": _prompt(texto, hoy)}],
             tools=[_TOOL],
-            tool_choice={"type": "tool", "name": _TOOL_NAME},  # obliga a devolver la estructura
+            tool_choice={"type": "tool", "name": _TOOL_NAME},
         )
     except anthropic.AuthenticationError as e:
         raise ExtractorError("La clave de la API de Claude es inválida o fue revocada.") from e
@@ -135,7 +135,6 @@ def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
 
     d["descripcion"] = str(d.get("descripcion") or texto).strip()[:200]
 
-    # Fecha: validar, canonizar y no permitir futuro.
     try:
         f = date.fromisoformat(str(d.get("fecha") or hoy.isoformat()))
     except ValueError:
