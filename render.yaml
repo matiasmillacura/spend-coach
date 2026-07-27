@@ -4,7 +4,10 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+    # 1 worker con hilos: el plan free tiene 512 MB y cada worker carga todo el
+    # stack (LangGraph, SQLAlchemy, pool de Postgres). El timeout largo es porque
+    # un turno del agente con herramientas puede tardar más de los 30s por defecto.
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
     healthCheckPath: /manifest.json
     envVars:
       - key: PYTHON_VERSION

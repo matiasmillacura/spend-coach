@@ -190,6 +190,11 @@ def create_app() -> Flask:
                                           imagen_b64=imagen, imagen_tipo=imagen_tipo)
         except ExtractorError as e:
             return jsonify({"ok": False, "error": str(e)}), 503
+        except Exception:
+            # El traceback va a los logs; al usuario, un mensaje que no miente.
+            log.exception("Fallo inesperado en /api/chat")
+            return jsonify({"ok": False, "error": "Se me cayó algo procesando tu mensaje. "
+                                                  "Intenta de nuevo en un momento."}), 500
         return jsonify({"ok": True, "reply": reply})
 
     @app.delete("/api/gasto/<int:gasto_id>")
