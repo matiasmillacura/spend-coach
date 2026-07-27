@@ -225,10 +225,25 @@ const chatForm = $("#chat-form");
 const chatInput = $("#chat-input");
 let chatCargado = false;
 
+// Pinta **negrita** como <strong> construyendo nodos: nunca innerHTML, así el texto del
+// modelo no puede inyectar HTML.
+function pintarTexto(el, texto) {
+  (texto || "").split(/\*\*(.+?)\*\*/g).forEach((parte, i) => {
+    if (!parte) return;
+    if (i % 2) {
+      const fuerte = document.createElement("strong");
+      fuerte.textContent = parte;
+      el.appendChild(fuerte);
+    } else {
+      el.appendChild(document.createTextNode(parte));
+    }
+  });
+}
+
 function burbuja(texto, clase) {
   const div = document.createElement("div");
   div.className = "bubble " + clase;
-  div.textContent = texto;
+  pintarTexto(div, texto);
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
   return div;
@@ -739,7 +754,8 @@ async function cargarCoach() {
     const t = data.texto || "";
     const idx = t.indexOf("💬");
     if (idx >= 0) {
-      box.textContent = t.slice(idx + 2).trim();
+      box.textContent = "";
+      pintarTexto(box, t.slice(idx + 2).trim());
     } else if (/No hay gastos/i.test(t)) {
       box.textContent = "Aún no hay movimientos este mes para comentar.";
     } else {
