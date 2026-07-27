@@ -1,13 +1,4 @@
-"""App web multiusuario del coach de gastos (Flask).
-
-Reutiliza el core: db (SQLAlchemy), extractor y coach (API de Claude), dashboard.
-La autenticación (Google OAuth) vive en auth.py. TODA ruta de datos exige sesión
-y opera solo sobre los gastos del usuario logueado.
-
-Ejecutar:
-    local (desarrollo):   python app.py
-    producción (WSGI):    gunicorn 'app:app'
-"""
+"""App web multiusuario del coach de gastos (Flask)."""
 from __future__ import annotations
 
 import os
@@ -19,8 +10,7 @@ import logging
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Motor del coach: original o LangGraph (COACH_ENGINE=langgraph), misma interfaz responder().
-from config import config  # importa config PRIMERO: carga el .env (dotenv)
+from config import config
 
 if os.environ.get("COACH_ENGINE", "").lower() == "langgraph":
     import coach_agent_lg as coach_agent
@@ -42,28 +32,24 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 
 def _static(nombre: str):
     resp = send_from_directory(WEB_DIR, nombre)
-    # Sin caché: al iterar la UI, un refresco siempre trae lo último.
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
 
 
 def create_app() -> Flask:
-    # Fail-fast: en producción, config insegura => la app NO arranca.
     for aviso in config.validar():
         print(aviso)
 
     app = Flask(__name__, static_folder=None)
     app.config.update(
         SECRET_KEY=config.SECRET_KEY,
-        SESSION_COOKIE_HTTPONLY=True,                 # la cookie no es legible por JS
-        SESSION_COOKIE_SAMESITE="Lax",                # mitiga CSRF (no viaja en POST cross-site)
-        SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,  # Secure siempre en producción
-        MAX_CONTENT_LENGTH=8 * 1024 * 1024,           # 8 MB: da espacio a la foto de boleta
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
+        MAX_CONTENT_LENGTH=8 * 1024 * 1024,
         JSON_AS_ASCII=False,
     )
 
-    # Detrás del proxy de la plataforma (Render, etc.): respeta X-Forwarded-Proto/Host
-    # para que url_for(_external=True) genere https:// (crítico para el callback de Google).
     if config.IS_PRODUCTION or config.HTTPS:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
@@ -71,7 +57,6 @@ def create_app() -> Flask:
     init_auth(app)
     app.register_blueprint(auth_bp)
 
-    # --- estáticos (el "shell"; no exponen datos) ---
     @app.get("/")
     def index():
         return _static("index.html")
@@ -84,7 +69,6 @@ def create_app() -> Flask:
     def styles():
         return _static("styles.css")
 
-    # PWA: manifest, service worker (scope raíz) e íconos.
     @app.get("/manifest.json")
     def manifest():
         return _static("manifest.json")
@@ -101,7 +85,6 @@ def create_app() -> Flask:
     def icon512():
         return _static("icon-512.png")
 
-    # --- API ---
     @app.get("/api/me")
     def me():
         uid = current_user_id()
@@ -109,14 +92,13 @@ def create_app() -> Flask:
         if not uid:
             return jsonify({"ok": False, **estado}), 401
         u = db.get_perfil(uid)
-        if not u:                       # sesión apunta a un usuario borrado
+        if not u:
             return jsonify({"ok": False, **estado}), 401
         return jsonify({"ok": True, "user": u, **estado})
 
     @app.get("/api/dashboard")
     @login_required
     def api_dashboard():
-        # ?mes=YYYY-MM permite navegar meses anteriores; sin él, el mes en curso.
         mes_raw = (request.args.get("mes") or "").strip()
         anio = mes = None
         if mes_raw:
@@ -135,8 +117,7 @@ def create_app() -> Flask:
     @app.post("/api/perfil")
     @login_required
     def api_perfil():
-        """Onboarding express: nombre (apodo) + fecha de nacimiento por formulario.
-        Es más rápido y barato que pedirlos por chat."""
+        """Onboarding express: nombre (apodo) + fecha de nacimiento por formulario."""
         data = request.get_json(silent=True) or {}
         nombre = (data.get("nombre") or "").strip()[:40]
         fecha_raw = (data.get("fecha_nacimiento") or "").strip()
@@ -154,8 +135,7 @@ def create_app() -> Flask:
         return jsonify({"ok": True, "user": db.get_perfil(current_user_id()) or p})
 
     def _maybe_resumen_semanal(uid: int) -> None:
-        """Coach proactivo: una vez por semana ISO, al abrir el chat, deja un
-        resumen semanal como mensaje del coach. Nunca rompe /api/historial."""
+        """Coach proactivo: una vez por semana ISO deja un resumen semanal como mensaje del coach."""
         try:
             p = db.get_perfil(uid)
             if not p or not p["onboarding_completo"]:
@@ -165,20 +145,18 @@ def create_app() -> Flask:
             semana = f"{iso[0]}-W{iso[1]:02d}"
             if db.get_ultima_semana_resumen(uid) == semana:
                 return
-            texto = resumen_semanal(uid)          # None si no hubo movimiento
+            texto = resumen_semanal(uid)
             if texto:
                 db.agregar_mensaje(uid, "assistant", texto)
-            # Semana cubierta (con o sin mensaje): no insistir hasta la próxima.
             db.set_ultima_semana_resumen(uid, semana)
         except ExtractorError:
-            pass                                   # sin clave/API caída: reintenta otra apertura
+            pass
         except Exception:
             log.exception("Fallo generando el resumen semanal")
 
     @app.get("/api/historial")
     @login_required
     def api_historial():
-        """Historial del chat para reconstruir la conversación al abrir la app."""
         uid = current_user_id()
         _maybe_resumen_semanal(uid)
         return jsonify({"ok": True, "mensajes": db.historial_mensajes(uid, 40)})
@@ -186,15 +164,14 @@ def create_app() -> Flask:
     @app.post("/api/chat")
     @login_required
     def api_chat():
-        """Un turno de conversación con el coach: texto y/o foto de boleta."""
         data = request.get_json(silent=True) or {}
         texto = (data.get("texto") or "").strip()
-        imagen = data.get("imagen") or None            # base64 sin prefijo data:
+        imagen = data.get("imagen") or None
         imagen_tipo = (data.get("imagen_tipo") or "image/jpeg").lower()
         if imagen:
             if imagen_tipo not in TIPOS_IMAGEN:
                 return jsonify({"ok": False, "error": "Formato de imagen no soportado."}), 400
-            if len(imagen) > 6_000_000:                # ~4.5 MB reales
+            if len(imagen) > 6_000_000:
                 return jsonify({"ok": False, "error": "La foto es muy pesada. Intenta de nuevo."}), 400
         if not texto and not imagen:
             return jsonify({"ok": False, "error": "Mensaje vacío."}), 400

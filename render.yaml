@@ -1,5 +1,3 @@
-# Blueprint de Render: crea el servicio web con un clic ("New +" → "Blueprint").
-# La base de datos vive en Neon (Postgres gratis): pega su URL en DATABASE_URL.
 services:
   - type: web
     name: spend-coach
@@ -16,13 +14,13 @@ services:
       - key: COACH_HTTPS
         value: "1"
       - key: COACH_ENGINE
-        value: langgraph           # memoria del agente en Postgres (quitar para volver al motor clásico)
+        value: langgraph
       - key: COACH_SECRET_KEY
-        generateValue: true          # Render genera una clave fuerte automáticamente
+        generateValue: true
       - key: ANTHROPIC_API_KEY
-        sync: false                  # se pega a mano en el dashboard de Render (secreto)
+        sync: false
       - key: DATABASE_URL
-        sync: false                  # URL de Neon (postgresql://...)
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET

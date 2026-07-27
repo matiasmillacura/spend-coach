@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="theme-color" content="#0a0e18" />
   <title>Coach de Gastos</title>
-  <!-- Íconos Material Symbols (mismo set que usa Material UI). FILL fijo = look consistente. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet"
@@ -22,7 +21,6 @@
   <!-- ===================== LOGIN / REGISTRO ===================== -->
   <div id="login-gate" class="gate" hidden>
 
-    <!-- Iniciar sesión -->
     <div id="card-login" class="gate-card gate-card--left">
       <div class="gate-logo"><span class="ms">savings</span></div>
       <h1 class="gate-card__title">Coach de Gastos</h1>
@@ -62,7 +60,6 @@
       </p>
     </div>
 
-    <!-- Crear cuenta -->
     <div id="card-register" class="gate-card gate-card--left" hidden>
       <div class="gate-logo"><span class="ms">savings</span></div>
       <h1 class="gate-card__title">Crea tu cuenta</h1>
@@ -148,7 +145,6 @@
   <!-- ===================== APP ===================== -->
   <div class="app" id="app" hidden>
 
-    <!-- ---------- DASHBOARD (pantalla principal) ---------- -->
     <section id="view-dash">
       <header class="topbar">
         <div>
@@ -172,7 +168,6 @@
         Cuéntale al coach tus ingresos para ver tu balance y ahorro.
       </div>
 
-      <!-- Hero: balance del mes -->
       <div class="card hero">
         <div class="hero__row">
           <div>
@@ -196,7 +191,6 @@
         <p id="fin-disponible" class="hero__disp"></p>
       </div>
 
-      <!-- Mini stats -->
       <div class="stats">
         <div class="stat card">
           <p class="stat__label">Hoy</p>
@@ -212,25 +206,21 @@
         </div>
       </div>
 
-      <!-- Insights vs mes anterior -->
       <div id="insights-card" class="card" hidden>
         <h2 class="card__title"><span class="ms">lightbulb</span> Cambios notables</h2>
         <ul id="insights-list" class="insights"></ul>
       </div>
 
-      <!-- Metas de ahorro -->
       <div class="card">
         <h2 class="card__title"><span class="ms">flag</span> Metas de ahorro</h2>
         <ul id="metas-list" class="metas"></ul>
       </div>
 
-      <!-- Presupuestos por categoría -->
       <div id="ppto-card" class="card" hidden>
         <h2 class="card__title"><span class="ms">speed</span> Presupuestos del mes</h2>
         <ul id="ppto-list" class="regla"></ul>
       </div>
 
-      <!-- Suscripciones / gastos fijos -->
       <div id="subs-card" class="card" hidden>
         <div class="card__head">
           <h2 class="card__title"><span class="ms">autorenew</span> Fijos y suscripciones</h2>
@@ -239,13 +229,11 @@
         <ul id="subs-list" class="subs"></ul>
       </div>
 
-      <!-- Regla configurable -->
       <div class="card">
         <h2 class="card__title">Regla <span id="regla-nums">50/30/20</span></h2>
         <ul id="regla-list" class="regla"></ul>
       </div>
 
-      <!-- Gastos por categoría -->
       <div class="card">
         <div class="card__head">
           <h2 class="card__title">Gastos por categoría</h2>
@@ -261,14 +249,12 @@
         <ul id="cat-legend" class="legend"></ul>
       </div>
 
-      <!-- Tendencia diaria -->
       <div class="card">
         <h2 class="card__title">Tendencia del mes</h2>
         <svg id="bars" viewBox="0 0 320 120" class="bars" preserveAspectRatio="none"></svg>
         <p id="bars-caption" class="caption">—</p>
       </div>
 
-      <!-- Mayor gasto -->
       <div id="mayor-card" class="card card--highlight" hidden>
         <h2 class="card__title">Mayor gasto del mes</h2>
         <div class="mayor">
@@ -277,7 +263,6 @@
         </div>
       </div>
 
-      <!-- Coach -->
       <div class="card card--coach">
         <h2 class="card__title"><span class="ms">forum</span> Tu coach</h2>
         <p id="coach-text" class="coach__text">Analizando tus finanzas…</p>
@@ -286,12 +271,10 @@
       <div class="spacer"></div>
     </section>
 
-    <!-- FAB: registrar por chat -->
     <button id="fab-chat" class="fab" aria-label="Registrar con tu coach">
       <span class="fab__icon ms">chat_bubble</span><span class="fab__label">Registrar</span>
     </button>
 
-    <!-- ---------- CHAT (overlay a pantalla completa) ---------- -->
     <section id="view-chat" class="chat" aria-hidden="true">
       <header class="chat__top">
         <button id="btn-back" class="icon-btn" aria-label="Volver al dashboard"><span class="ms">arrow_back</span></button>

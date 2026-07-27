@@ -1,18 +1,4 @@
-"""Autenticación: Google (OpenID Connect via Authlib) y correo+contraseña.
-
-Flujo:
-  /login               → redirige a Google (o login demo si no hay credenciales)
-  /auth/callback       → Google vuelve aquí; creamos/actualizamos el usuario y abrimos sesión
-  POST /auth/register  → crea cuenta con correo/contraseña (+ RUT validado) y abre sesión
-  POST /auth/login     → login con correo/contraseña
-  /logout              → cierra la sesión
-
-La sesión guarda solo `user_id` en una cookie firmada por Flask. El decorador
-`login_required` protege las rutas de API devolviendo 401 JSON si no hay sesión.
-
-Modo demo: si no hay GOOGLE_CLIENT_ID/SECRET configurados, /login entra como un
-usuario local único. Sirve para desarrollo sin montar OAuth.
-"""
+"""Autenticación: Google (OpenID Connect via Authlib) y correo+contraseña."""
 from __future__ import annotations
 
 import re
@@ -31,7 +17,6 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def init_auth(app) -> None:
-    """Registra Authlib y el proveedor Google en la app (llamar al crear la app)."""
     oauth.init_app(app)
     if config.auth_habilitada():
         oauth.register(
@@ -48,10 +33,9 @@ def login():
     if config.auth_habilitada():
         redirect_uri = url_for("auth.callback", _external=True)
         return oauth.google.authorize_redirect(redirect_uri)
-    # Modo demo: SOLO si está explícitamente permitido (nunca en producción).
     if config.demo_permitido():
         u = db.get_or_create_demo_user()
-        session.clear()                 # sesión nueva (evita fijación de sesión)
+        session.clear()
         session["user_id"] = u["id"]
         return redirect("/")
     return ("El login no está disponible: falta configurar el acceso con Google "
@@ -62,7 +46,7 @@ def login():
 def callback():
     if not config.auth_habilitada():
         return redirect("/login")
-    token = oauth.google.authorize_access_token()  # valida state + intercambia el código
+    token = oauth.google.authorize_access_token()
     info = token.get("userinfo") or {}
     sub = info.get("sub")
     if not sub:
@@ -73,19 +57,16 @@ def callback():
         nombre=info.get("name", ""),
         foto_url=info.get("picture"),
     )
-    session.clear()               # evita fijación de sesión: sesión nueva tras login
+    session.clear()
     session["user_id"] = u["id"]
     return redirect("/")
 
-
-# --- registro y login con correo/contraseña ---------------------------------
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
 
 def validar_rut(rut: str) -> str | None:
-    """Valida un RUT chileno (módulo 11) y lo devuelve normalizado (12345678-5).
-    None si es inválido. Acepta puntos, guión y dígito verificador k/K."""
+    """Valida un RUT chileno (módulo 11); devuelve el RUT normalizado (12345678-5) o None."""
     limpio = re.sub(r"[^0-9kK]", "", rut or "")
     if not (2 <= len(limpio) <= 9):
         return None
@@ -138,9 +119,9 @@ def register():
             email=email, password_hash=generate_password_hash(password),
             apodo=apodo, nombre_completo=nombre_completo, rut=rut, fecha_nacimiento=fecha,
         )
-    except ValueError as e:      # correo o RUT ya en uso
+    except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 409
-    session.clear()              # sesión nueva tras registro (evita fijación)
+    session.clear()
     session["user_id"] = u["id"]
     return jsonify({"ok": True, "user": db.get_perfil(u["id"])})
 
@@ -149,7 +130,6 @@ def register():
 def login_password():
     d = request.get_json(silent=True) or {}
     cred = db.get_credenciales_por_email(d.get("email") or "")
-    # Mensaje único para correo inexistente y clave mala: no revelamos cuál falló.
     if not cred or not check_password_hash(cred["password_hash"], d.get("password") or ""):
         return jsonify({"ok": False, "error": "Correo o contraseña incorrectos."}), 401
     session.clear()
@@ -168,7 +148,6 @@ def current_user_id() -> int | None:
 
 
 def login_required(fn):
-    """Protege una ruta de API: 401 JSON si no hay sesión válida."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not session.get("user_id"):

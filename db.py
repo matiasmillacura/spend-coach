@@ -1,13 +1,4 @@
-"""Capa de datos multiusuario con SQLAlchemy.
-
-Portable entre SQLite (desarrollo local) y PostgreSQL (producción): se evita
-cualquier función de fecha específica del motor (nada de strftime/to_char).
-Los rangos de mes se calculan en Python y se filtran con comparaciones de fecha,
-que funcionan igual en ambos.
-
-TODA consulta de gastos está acotada por user_id: un usuario solo ve y borra
-lo suyo. Esa es la garantía central del modo multiusuario.
-"""
+"""Capa de datos multiusuario con SQLAlchemy."""
 from __future__ import annotations
 
 import calendar
@@ -42,22 +33,19 @@ from sqlalchemy.orm import (
 
 from config import config
 
-# Categorías permitidas. El extractor debe mapear cada gasto a una de estas.
 CATEGORIAS = [
-    "comida",          # almuerzos, café, delivery, restaurantes
-    "supermercado",    # compras de despensa
-    "transporte",      # bencina, micro, metro, uber, estacionamiento
-    "servicios",       # luz, agua, gas, internet, suscripciones
-    "salud",           # farmacia, médico, gimnasio
-    "entretenimiento", # cine, salidas, juegos, streaming
-    "hogar",           # arriendo, muebles, aseo, reparaciones
-    "ropa",            # vestuario y calzado
-    "educacion",       # cursos, libros, colegiatura
-    "otros",           # lo que no calce en lo anterior
+    "comida",
+    "supermercado",
+    "transporte",
+    "servicios",
+    "salud",
+    "entretenimiento",
+    "hogar",
+    "ropa",
+    "educacion",
+    "otros",
 ]
 
-# Clasificación para la regla 50/30/20: "necesidades" = gasto difícil de evitar,
-# "deseos" = discrecional. (El ahorro no es categoría de gasto: se mide aparte.)
 GRUPO_CATEGORIA = {
     "supermercado": "necesidades",
     "transporte": "necesidades",
@@ -65,7 +53,7 @@ GRUPO_CATEGORIA = {
     "salud": "necesidades",
     "hogar": "necesidades",
     "educacion": "necesidades",
-    "comida": "deseos",          # restaurantes/café/delivery (la despensa va en 'supermercado')
+    "comida": "deseos",
     "entretenimiento": "deseos",
     "ropa": "deseos",
     "otros": "deseos",
@@ -75,7 +63,6 @@ ONBOARDING_PASOS = ["nombre", "nacimiento", "ingresos", "meta", "completo"]
 
 REGLA_DEFAULT = {"pct_necesidades": 50, "pct_deseos": 30, "pct_ahorro": 20}
 
-# check_same_thread solo aplica a SQLite (servidor multi-hilo).
 _engine_kwargs = {"pool_pre_ping": True}
 if config.DATABASE_URL.startswith("sqlite"):
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
@@ -92,23 +79,17 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # 'sub' de Google (identificador estable de la cuenta). Único cuando existe.
     google_sub: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     nombre: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     foto_url: Mapped[str | None] = mapped_column(String(1000))
-    # Login con contraseña (alternativa a Google). NULL para cuentas de Google.
     password_hash: Mapped[str | None] = mapped_column(String(256))
-    rut: Mapped[str | None] = mapped_column(String(12), index=True)      # normalizado: 12345678-5
+    rut: Mapped[str | None] = mapped_column(String(12), index=True)
     nombre_completo: Mapped[str | None] = mapped_column(String(200))
-    # Perfil financiero (se completa en el onboarding conversacional).
     fecha_nacimiento: Mapped[date | None] = mapped_column(Date)
     onboarding_paso: Mapped[str] = mapped_column(String(20), nullable=False, default="nombre")
     onboarding_completo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Última semana ISO (YYYY-Www) en que se generó el resumen semanal proactivo.
     ultima_semana_resumen: Mapped[str | None] = mapped_column(String(10))
-    # Punto de partida para quien llega a MITAD de mes: cuánta plata tenía
-    # disponible ese día. Evita obligar a reconstruir todo el mes hacia atrás.
     saldo_inicial: Mapped[int | None] = mapped_column(Integer)
     saldo_inicial_fecha: Mapped[date | None] = mapped_column(Date)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -126,7 +107,7 @@ class Gasto(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    monto: Mapped[int] = mapped_column(Integer, nullable=False)          # pesos chilenos (CLP)
+    monto: Mapped[int] = mapped_column(Integer, nullable=False)
     categoria: Mapped[str] = mapped_column(String(20), nullable=False)
     descripcion: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -149,8 +130,7 @@ class IngresoFijo(Base):
 
 
 class GastoFijo(Base):
-    """Gasto recurrente mensual (suscripciones, arriendo, plan del celular):
-    cuenta automáticamente cada mes, igual que los ingresos fijos."""
+    """Gasto recurrente mensual: cuenta automáticamente cada mes."""
     __tablename__ = "gastos_fijos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -191,12 +171,12 @@ class MetaAhorro(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    nombre: Mapped[str] = mapped_column(String(120), nullable=False)        # propósito: "vacaciones", "fondo emergencia"
+    nombre: Mapped[str] = mapped_column(String(120), nullable=False)
     tipo: Mapped[str] = mapped_column(String(20), nullable=False, default="monto_fecha")
-    monto_objetivo: Mapped[int | None] = mapped_column(Integer)             # tipo monto_fecha
-    fecha_objetivo: Mapped[date | None] = mapped_column(Date)               # tipo monto_fecha
-    monto_mensual: Mapped[int | None] = mapped_column(Integer)              # tipo monto_mensual
-    porcentaje: Mapped[int | None] = mapped_column(Integer)                 # tipo porcentaje (del ingreso)
+    monto_objetivo: Mapped[int | None] = mapped_column(Integer)
+    fecha_objetivo: Mapped[date | None] = mapped_column(Date)
+    monto_mensual: Mapped[int | None] = mapped_column(Integer)
+    porcentaje: Mapped[int | None] = mapped_column(Integer)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -231,22 +211,20 @@ class Mensaje(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    rol: Mapped[str] = mapped_column(String(12), nullable=False)   # 'user' | 'assistant'
+    rol: Mapped[str] = mapped_column(String(12), nullable=False)
     texto: Mapped[str] = mapped_column(Text, nullable=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 def _migrar_legacy_si_aplica() -> None:
-    """Migra bases de la versión anterior (tabla 'gastos' SIN user_id) preservando
-    los datos: crea el usuario demo local y le asigna los gastos existentes.
-    Solo aplica a SQLite antiguo; en una base nueva o en Postgres no hace nada."""
+    """Migra bases antiguas (tabla 'gastos' sin user_id) al usuario demo local."""
     insp = sqla_inspect(engine)
     if not insp.has_table("gastos"):
         return
     cols = [c["name"] for c in insp.get_columns("gastos")]
     if "user_id" in cols:
         return
-    Base.metadata.create_all(engine)          # asegura la tabla 'users'
+    Base.metadata.create_all(engine)
     owner = get_or_create_demo_user()
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE gastos ADD COLUMN user_id INTEGER"))
@@ -259,16 +237,13 @@ def _migrar_legacy_si_aplica() -> None:
 
 
 def init_db() -> None:
-    """Crea las tablas si no existen (migrando bases antiguas). Idempotente y
-    tolerante a carreras entre workers en el primer arranque (gunicorn)."""
+    """Crea las tablas si no existen (migrando bases antiguas); idempotente."""
     _migrar_legacy_si_aplica()
     try:
         Base.metadata.create_all(engine)
     except Exception:
-        # Otro worker pudo crear las tablas a la vez; si no existen, el error es real.
         if not sqla_inspect(engine).has_table("users"):
             raise
-    # Mini-migración: columnas agregadas a tablas ya existentes (create_all no las añade).
     insp = sqla_inspect(engine)
     if insp.has_table("users"):
         cols = [c["name"] for c in insp.get_columns("users")]
@@ -300,10 +275,7 @@ def session_scope() -> Iterator[Session]:
         s.close()
 
 
-# --- utilidades internas -----------------------------------------------------
-
 def _rango_mes(anio: int, mes: int) -> tuple[date, date]:
-    """Primer y último día del mes (para filtrar por rango, sin funciones de motor)."""
     ultimo = calendar.monthrange(anio, mes)[1]
     return date(anio, mes, 1), date(anio, mes, ultimo)
 
@@ -314,16 +286,10 @@ def _a_fecha(fecha) -> date:
     return date.fromisoformat(str(fecha))
 
 
-# --- usuarios ----------------------------------------------------------------
-
 def get_or_create_user(
     google_sub: str, email: str, nombre: str = "", foto_url: str | None = None
 ) -> dict:
-    """Busca al usuario por su 'sub' de Google; lo crea si es la primera vez.
-    Devuelve un dict con los datos del usuario (id incluido).
-
-    Tolera la carrera de dos primeros logins concurrentes del mismo usuario: si el
-    INSERT choca con la restricción única de google_sub, reintenta el SELECT."""
+    """Busca al usuario por su 'sub' de Google; lo crea si es la primera vez."""
     for intento in range(2):
         try:
             with session_scope() as s:
@@ -331,10 +297,8 @@ def get_or_create_user(
                 if u is None:
                     u = User(google_sub=google_sub, email=email, nombre=nombre, foto_url=foto_url)
                     s.add(u)
-                    s.flush()  # asigna el id sin cerrar la transacción
+                    s.flush()
                 else:
-                    # Email/foto se refrescan desde Google, pero el nombre NO pisa
-                    # el apodo elegido en el onboarding (solo se usa si está vacío).
                     u.email, u.foto_url = email, foto_url
                     if not u.nombre:
                         u.nombre = nombre
@@ -346,7 +310,6 @@ def get_or_create_user(
 
 
 def get_user(user_id: int) -> dict | None:
-    """Datos básicos del usuario para la UI. None si no existe."""
     with session_scope() as s:
         u = s.get(User, user_id)
         if u is None:
@@ -359,7 +322,6 @@ def get_or_create_demo_user() -> dict:
     with session_scope() as s:
         u = s.scalar(select(User).where(User.email == "demo@local"))
         if u is None:
-            # nombre vacío a propósito: así el onboarding conversacional te pide el nombre.
             u = User(google_sub=None, email="demo@local", nombre="")
             s.add(u)
             s.flush()
@@ -370,9 +332,7 @@ def crear_usuario_password(
     email: str, password_hash: str, apodo: str,
     nombre_completo: str, rut: str | None, fecha_nacimiento,
 ) -> dict:
-    """Crea una cuenta con contraseña (registro manual). El apodo se guarda en
-    `nombre` (el mismo campo que usa el coach para dirigirse al usuario).
-    Lanza ValueError si el correo o el RUT ya están en uso."""
+    """Crea una cuenta con contraseña; ValueError si el correo o RUT ya están en uso."""
     email = (email or "").strip().lower()
     with session_scope() as s:
         if s.scalar(select(User).where(func.lower(User.email) == email)):
@@ -391,8 +351,7 @@ def crear_usuario_password(
 
 
 def get_credenciales_por_email(email: str) -> dict | None:
-    """Para el login manual: id + hash de la cuenta con contraseña de ese correo.
-    None si no existe (o si ese correo solo entra con Google)."""
+    """Id + hash de la cuenta con contraseña de ese correo; None si no existe."""
     email = (email or "").strip().lower()
     with session_scope() as s:
         u = s.scalar(select(User).where(
@@ -400,12 +359,9 @@ def get_credenciales_por_email(email: str) -> dict | None:
         return {"id": u.id, "password_hash": u.password_hash} if u else None
 
 
-# --- gastos (todo acotado por user_id) --------------------------------------
-
 def agregar_gasto(
     user_id: int, monto: int, categoria: str, descripcion: str, fecha, texto_orig: str
 ) -> int:
-    """Inserta un gasto del usuario y devuelve su id."""
     monto = int(monto)
     if monto <= 0:
         raise ValueError("El monto debe ser mayor que 0.")
@@ -437,7 +393,6 @@ def ultimos_gastos(user_id: int, limite: int = 50) -> list[dict]:
 
 
 def borrar_gasto(user_id: int, gasto_id: int) -> bool:
-    """Borra un gasto por id SOLO si pertenece al usuario. True si existía."""
     with session_scope() as s:
         g = s.get(Gasto, gasto_id)
         if g is None or g.user_id != user_id:
@@ -447,7 +402,6 @@ def borrar_gasto(user_id: int, gasto_id: int) -> bool:
 
 
 def resumen_mes(user_id: int, anio: int, mes: int) -> dict:
-    """Totales del mes del usuario: total general y desglose por categoría."""
     ini, fin = _rango_mes(anio, mes)
     with session_scope() as s:
         filas = s.execute(
@@ -486,7 +440,6 @@ def serie_diaria(user_id: int, anio: int, mes: int) -> dict[str, int]:
 
 
 def mayor_gasto(user_id: int, anio: int, mes: int) -> dict | None:
-    """El gasto individual más grande del mes del usuario."""
     ini, fin = _rango_mes(anio, mes)
     with session_scope() as s:
         g = s.scalars(
@@ -509,8 +462,6 @@ def _gasto_dict(g: Gasto) -> dict:
     }
 
 
-# --- perfil y onboarding -----------------------------------------------------
-
 def _edad(nac: date | None, hoy: date | None = None) -> int | None:
     if nac is None:
         return None
@@ -519,7 +470,6 @@ def _edad(nac: date | None, hoy: date | None = None) -> int | None:
 
 
 def guardar_perfil(user_id: int, nombre: str | None = None, fecha_nacimiento=None) -> dict:
-    """Actualiza nombre y/o fecha de nacimiento del usuario."""
     with session_scope() as s:
         u = s.get(User, user_id)
         if u is None:
@@ -551,8 +501,7 @@ def get_perfil(user_id: int) -> dict | None:
 
 
 def set_saldo_inicial(user_id: int, monto: int, fecha=None) -> None:
-    """Guarda el punto de partida de quien llega a mitad de mes: cuánta plata
-    tenía disponible ese día (el dashboard arranca desde ahí, sin mes hacia atrás)."""
+    """Guarda el saldo disponible declarado por quien llega a mitad de mes."""
     monto = int(monto)
     if monto < 0:
         raise ValueError("El saldo no puede ser negativo.")
@@ -581,8 +530,6 @@ def _perfil_dict(u: User) -> dict:
         "metodo_login": "google" if u.google_sub else ("password" if u.password_hash else "demo"),
     }
 
-
-# --- ingresos fijos (recurrentes) -------------------------------------------
 
 def agregar_ingreso_fijo(user_id: int, descripcion: str, monto: int) -> int:
     monto = int(monto)
@@ -621,8 +568,6 @@ def total_ingreso_fijo(user_id: int) -> int:
         )
         return int(t or 0)
 
-
-# --- gastos fijos / suscripciones (recurrentes) ------------------------------
 
 def agregar_gasto_fijo(user_id: int, descripcion: str, monto: int, categoria: str = "servicios") -> int:
     monto = int(monto)
@@ -686,8 +631,6 @@ def total_gasto_fijo(user_id: int) -> int:
         return int(t or 0)
 
 
-# --- ingresos variables (por evento) ----------------------------------------
-
 def registrar_ingreso(user_id: int, monto: int, descripcion: str, fecha, texto_orig: str = "") -> int:
     monto = int(monto)
     if monto <= 0:
@@ -728,8 +671,6 @@ def ingreso_mensual_total(user_id: int, anio: int, mes: int) -> int:
     """Ingreso del mes = fijos activos + variables anotados en el mes."""
     return total_ingreso_fijo(user_id) + total_ingresos_variables_mes(user_id, anio, mes)
 
-
-# --- metas de ahorro ---------------------------------------------------------
 
 def crear_meta(user_id: int, nombre: str, tipo: str = "monto_fecha", monto_objetivo=None,
                fecha_objetivo=None, monto_mensual=None, porcentaje=None) -> int:
@@ -796,14 +737,11 @@ def _meta_dict(m: MetaAhorro) -> dict:
     }
 
 
-# --- ahorros -----------------------------------------------------------------
-
 def registrar_ahorro(user_id: int, monto: int, fecha, meta_id: int | None = None, texto_orig: str = "") -> int:
     monto = int(monto)
     if monto <= 0:
         raise ValueError("El monto del ahorro debe ser mayor que 0.")
     with session_scope() as s:
-        # Valida que la meta (si viene) sea del usuario.
         if meta_id is not None:
             m = s.get(MetaAhorro, meta_id)
             if m is None or m.user_id != user_id:
@@ -825,7 +763,6 @@ def total_ahorrado_meta(user_id: int, meta_id: int) -> int:
 
 
 def total_ahorrado_meta_hasta(user_id: int, meta_id: int, hasta: date) -> int:
-    """Total aportado a una meta hasta cierta fecha (para proyecciones)."""
     with session_scope() as s:
         t = s.scalar(
             select(func.coalesce(func.sum(Ahorro.monto), 0))
@@ -835,7 +772,6 @@ def total_ahorrado_meta_hasta(user_id: int, meta_id: int, hasta: date) -> int:
 
 
 def total_ahorrado_meta_mes(user_id: int, meta_id: int, anio: int, mes: int) -> int:
-    """Aportado a una meta SOLO en el mes indicado (para progreso de metas mensuales)."""
     ini, fin = _rango_mes(anio, mes)
     with session_scope() as s:
         t = s.scalar(
@@ -855,9 +791,6 @@ def total_ahorro_mes(user_id: int, anio: int, mes: int) -> int:
         )
         return int(t or 0)
 
-
-# --- corrección de movimientos (listar / editar / eliminar) ------------------
-# El coach revierte duplicados o corrige montos; todo verifica ownership (user_id).
 
 def ultimos_ingresos(user_id: int, limite: int = 10) -> list[dict]:
     with session_scope() as s:
@@ -884,7 +817,6 @@ def ultimos_ahorros(user_id: int, limite: int = 10) -> list[dict]:
 
 
 def editar_gasto(user_id: int, gasto_id: int, **campos) -> bool:
-    """Edita monto/categoria/descripcion/fecha de un gasto propio."""
     with session_scope() as s:
         g = s.get(Gasto, gasto_id)
         if g is None or g.user_id != user_id:
@@ -913,7 +845,6 @@ def borrar_ingreso(user_id: int, ingreso_id: int) -> bool:
 
 
 def editar_ingreso(user_id: int, ingreso_id: int, **campos) -> bool:
-    """Edita monto/descripcion/fecha de un ingreso variable propio."""
     with session_scope() as s:
         i = s.get(Ingreso, ingreso_id)
         if i is None or i.user_id != user_id:
@@ -940,7 +871,6 @@ def borrar_ahorro(user_id: int, ahorro_id: int) -> bool:
 
 
 def editar_ahorro(user_id: int, ahorro_id: int, monto=None, fecha=None, meta_id=None) -> bool:
-    """Edita monto/fecha/meta de un aporte de ahorro propio."""
     with session_scope() as s:
         a = s.get(Ahorro, ahorro_id)
         if a is None or a.user_id != user_id:
@@ -959,7 +889,6 @@ def editar_ahorro(user_id: int, ahorro_id: int, monto=None, fecha=None, meta_id=
 
 
 def editar_ingreso_fijo(user_id: int, ingreso_id: int, monto=None, descripcion=None, activo=None) -> bool:
-    """Edita un ingreso fijo propio (p. ej. cambió el sueldo, o desactivarlo)."""
     with session_scope() as s:
         i = s.get(IngresoFijo, ingreso_id)
         if i is None or i.user_id != user_id:
@@ -976,8 +905,6 @@ def editar_ingreso_fijo(user_id: int, ingreso_id: int, monto=None, descripcion=N
         return True
 
 
-# --- regla de presupuesto 50/30/20 ------------------------------------------
-
 def get_regla(user_id: int) -> dict:
     """Devuelve la regla del usuario o el default 50/30/20 si no la ha configurado."""
     with session_scope() as s:
@@ -988,7 +915,6 @@ def get_regla(user_id: int) -> dict:
 
 
 def set_regla(user_id: int, pct_necesidades: int, pct_deseos: int, pct_ahorro: int) -> dict:
-    """Guarda la regla. No valida viabilidad (eso lo hace/aconseja la IA)."""
     n, d, a = int(pct_necesidades), int(pct_deseos), int(pct_ahorro)
     if min(n, d, a) < 0:
         raise ValueError("Los porcentajes no pueden ser negativos.")
@@ -1002,8 +928,6 @@ def set_regla(user_id: int, pct_necesidades: int, pct_deseos: int, pct_ahorro: i
             r.actualizado_en = datetime.utcnow()
         return {"pct_necesidades": n, "pct_deseos": d, "pct_ahorro": a}
 
-
-# --- presupuestos por categoría ----------------------------------------------
 
 def set_presupuesto(user_id: int, categoria: str, monto: int) -> dict:
     """Define el tope mensual de una categoría. monto <= 0 lo elimina."""
@@ -1032,10 +956,7 @@ def listar_presupuestos(user_id: int) -> list[dict]:
         return [{"categoria": p.categoria, "monto": p.monto} for p in filas]
 
 
-# --- rangos de fechas (para el resumen semanal) -------------------------------
-
 def gastos_rango(user_id: int, ini: date, fin: date) -> dict:
-    """Total y desglose por categoría de los gastos variables entre dos fechas."""
     with session_scope() as s:
         filas = s.execute(
             select(Gasto.categoria, func.sum(Gasto.monto))
@@ -1078,16 +999,13 @@ def set_ultima_semana_resumen(user_id: int, semana: str) -> None:
             u.ultima_semana_resumen = semana
 
 
-# --- mensajes (memoria del chat) --------------------------------------------
-
 def agregar_mensaje(user_id: int, rol: str, texto: str) -> None:
     with session_scope() as s:
         s.add(Mensaje(user_id=user_id, rol=rol, texto=texto or ""))
 
 
 def agregar_intercambio(user_id: int, user_texto: str, assistant_texto: str) -> None:
-    """Inserta el par (user, assistant) en una sola transacción: nunca queda un
-    mensaje huérfano que rompa la alternancia de roles del historial."""
+    """Inserta el par (user, assistant) en una sola transacción."""
     with session_scope() as s:
         s.add(Mensaje(user_id=user_id, rol="user", texto=user_texto or ""))
         s.add(Mensaje(user_id=user_id, rol="assistant", texto=assistant_texto or ""))

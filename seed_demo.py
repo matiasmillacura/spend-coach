@@ -1,11 +1,4 @@
-"""Carga datos de demo (para el usuario demo local) y ver el dashboard lleno.
-
-Uso (base separada, recomendado para no tocar tu base real):
-    DATABASE_URL="sqlite:///demo.db" python3 seed_demo.py
-    DATABASE_URL="sqlite:///demo.db" python3 app.py     # y abre en modo demo
-
-Para volver a cero:  rm demo.db
-"""
+"""Carga datos de demo para el usuario demo local."""
 from __future__ import annotations
 
 import calendar
@@ -14,7 +7,6 @@ from datetime import date
 
 import db
 
-# Gastos "plantilla" realistas por categoría: (categoria, descripcion, min, max)
 PLANTILLAS = [
     ("comida", "almuerzo", 4000, 9000),
     ("comida", "café", 2000, 4500),
@@ -39,21 +31,18 @@ def _sembrar_mes(user_id: int, anio: int, mes: int, n_gastos: int, rnd: random.R
         dia = rnd.randint(1, dias)
         f = f"{anio:04d}-{mes:02d}-{dia:02d}"
         db.agregar_gasto(user_id, monto, cat, desc, f, f"demo {desc}")
-    # Un gasto grande de arriendo para que el "mayor gasto" tenga gracia
     db.agregar_gasto(user_id, 350000, "hogar", "arriendo", f"{anio:04d}-{mes:02d}-03", "demo arriendo")
 
 
 def main() -> None:
-    rnd = random.Random(42)  # semilla fija: datos reproducibles
+    rnd = random.Random(42)
     db.init_db()
     user_id = db.get_or_create_demo_user()["id"]
     hoy = date.today()
 
-    # Mes anterior (para la comparación del dashboard)
     pa, pm = (hoy.year - 1, 12) if hoy.month == 1 else (hoy.year, hoy.month - 1)
     _sembrar_mes(user_id, pa, pm, 22, rnd)
 
-    # Mes actual: repartido por todo el mes para que los gráficos se vean llenos.
     dias_mes = calendar.monthrange(hoy.year, hoy.month)[1]
     for _ in range(20):
         cat, desc, lo, hi = rnd.choice(PLANTILLAS)

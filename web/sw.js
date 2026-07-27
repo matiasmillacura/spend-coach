@@ -1,6 +1,4 @@
-/* Service worker del Coach de Gastos.
-   Cachea el "shell" (HTML/CSS/JS/íconos) para abrir al instante y funcionar
-   como app instalada. La API nunca se cachea: los datos siempre van a la red. */
+/* Service worker del Coach de Gastos: cachea el shell; la API nunca se cachea. */
 const CACHE = "coach-shell-v1";
 const SHELL = ["/", "/app.js", "/styles.css", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
@@ -21,9 +19,8 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth") ||
       url.pathname === "/login" || url.pathname === "/logout") {
-    return; // datos y auth: siempre red
+    return;
   }
-  // Shell: red primero (para ver siempre lo último) con caché de respaldo offline.
   e.respondWith(
     fetch(e.request)
       .then((resp) => {

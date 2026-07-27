@@ -1,4 +1,6 @@
-# 💰 Coach de gastos (web multiusuario)
+# Coach de gastos (web multiusuario)
+
+[![CI](https://github.com/matiasmillacura/spend-coach/actions/workflows/ci.yml/badge.svg)](https://github.com/matiasmillacura/spend-coach/actions/workflows/ci.yml)
 
 App **mobile-first** con dos vistas: un **chat** que es un **coach financiero
 conversacional** y un **dashboard** con el análisis completo de tu plata.

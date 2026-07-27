@@ -1,9 +1,4 @@
-"""Convierte lenguaje natural en un gasto estructurado usando la API de Claude.
-
-Usa el SDK oficial `anthropic` con **structured outputs** (JSON garantizado por
-esquema), así la respuesta siempre trae los campos esperados. Modelo por defecto:
-Haiku 4.5 — barato y de sobra para esta tarea de extracción.
-"""
+"""Convierte lenguaje natural en un gasto estructurado usando la API de Claude."""
 from __future__ import annotations
 
 import math
@@ -20,7 +15,6 @@ class ExtractorError(RuntimeError):
     """Problema al hablar con la API de Claude (sin clave, sin conexión, etc.)."""
 
 
-# Cliente perezoso: se crea al primer uso para no fallar al importar sin clave.
 _client: anthropic.Anthropic | None = None
 
 
@@ -37,9 +31,6 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-# Herramienta que Claude está OBLIGADO a llamar (tool_choice forzado). Es el patrón
-# portable para extracción estructurada: funciona en todas las versiones del SDK,
-# sin depender de output_config (que no existe en anthropic 0.69.x).
 _TOOL_NAME = "registrar_gasto"
 _TOOL = {
     "name": _TOOL_NAME,
@@ -86,11 +77,7 @@ Mensaje del usuario: "{texto}\""""
 
 
 def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
-    """Devuelve un dict con: es_gasto, monto, categoria, descripcion, fecha.
-
-    Lanza ExtractorError si no puede hablar con la API, o ValueError si la
-    respuesta no es interpretable (p. ej. gasto sin monto).
-    """
+    """Devuelve un dict con es_gasto, monto, categoria, descripcion y fecha."""
     hoy = hoy or date.today()
     client = get_client()
 
@@ -112,8 +99,6 @@ def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
     except anthropic.APIError as e:
         raise ExtractorError(f"Error de la API de Claude: {e}") from e
 
-    # Con tool_choice forzado, Claude responde con un bloque tool_use cuyo .input
-    # ya es un dict (no hay JSON que parsear a mano).
     d = None
     for b in resp.content:
         if b.type == "tool_use" and b.name == _TOOL_NAME:
@@ -147,12 +132,8 @@ def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
 
 
 def _parsear_monto(monto) -> int:
-    """Convierte el monto a entero CLP > 0, tolerando formato/jerga chilena.
-
-    Con structured outputs el monto ya viene como entero, pero mantenemos esta
-    red de seguridad por si llega como string ("12.000", "$1.500", "25k").
-    """
-    if isinstance(monto, bool):  # bool es subclase de int; no lo queremos
+    """Convierte el monto a entero CLP > 0, tolerando formato/jerga chilena."""
+    if isinstance(monto, bool):
         raise ValueError("No entendí el monto del gasto.")
 
     if isinstance(monto, (int, float)):

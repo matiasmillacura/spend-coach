@@ -15,7 +15,6 @@ function el(tag, attrs = {}, text) {
   return n;
 }
 
-// Count-up para números clave (respeta prefers-reduced-motion).
 function animateCLP(elem, target) {
   const to = Math.round(target || 0);
   const from = Number(elem.dataset.v || 0);
@@ -42,15 +41,13 @@ async function api(path, opts = {}) {
 // ---------- pantallas ----------
 function configLoginButton(estado) {
   const e = estado || {};
-  // Sin Google configurado: en demo el botón entra igual (vía /login); si no, se oculta.
   document.querySelectorAll(".js-google").forEach((btn) => {
-    if (e.auth_google) return;                    // texto por defecto del HTML
+    if (e.auth_google) return;
     if (e.demo) btn.querySelector(".js-google-text").textContent = "Entrar (modo demo)";
     else btn.hidden = true;
   });
 }
 
-// Alternar entre iniciar sesión y crear cuenta
 $("#go-register").addEventListener("click", () => {
   $("#card-login").hidden = true;
   $("#card-register").hidden = false;
@@ -136,7 +133,6 @@ function showApp(user) {
   const primer = ((USUARIO && USUARIO.nombre) || "").split(" ")[0];
   $("#greet-name").textContent = primer ? `Hola, ${primer}` : "Hola";
   cargarDashboard();
-  // Onboarding conversacional pendiente (ingresos/meta): directo al chat.
   if (USUARIO && !USUARIO.onboarding_completo) goChat();
 }
 
@@ -204,13 +200,12 @@ function goDash() {
   document.body.classList.remove("chat-open");
   chatView.classList.remove("open");
   chatView.setAttribute("aria-hidden", "true");
-  cargarDashboard();   // refleja lo que el coach haya registrado
+  cargarDashboard();
 }
 $("#fab-chat").addEventListener("click", goChat);
 $("#btn-back").addEventListener("click", goDash);
 $("#btn-refresh").addEventListener("click", () => { mesVista = null; cargarDashboard(); });
 
-// Navegación de meses (‹ ›). mesVista=null = mes en curso.
 let mesVista = null;
 function shiftMes(delta) {
   const base = mesVista || new Date().toISOString().slice(0, 7);
@@ -230,7 +225,6 @@ const chatForm = $("#chat-form");
 const chatInput = $("#chat-input");
 let chatCargado = false;
 
-// Usa textContent (NO innerHTML) para todo lo dinámico: evita XSS.
 function burbuja(texto, clase) {
   const div = document.createElement("div");
   div.className = "bubble " + clase;
@@ -257,7 +251,7 @@ async function cargarChat() {
   let data;
   try {
     const res = await api("/api/historial");
-    if (!res.ok) return;              // reintenta la próxima vez que se abra el chat
+    if (!res.ok) return;
     data = await res.json();
   } catch (e) {
     return;
@@ -265,7 +259,6 @@ async function cargarChat() {
   chatCargado = true;
   chatLog.innerHTML = "";
   let mensajes = data.mensajes || [];
-  // El arranque se envió como "Hola" oculto: no lo mostramos en el replay.
   if (mensajes.length && mensajes[0].rol === "user" && mensajes[0].texto.trim().toLowerCase() === "hola") {
     mensajes = mensajes.slice(1);
   }
@@ -281,7 +274,6 @@ async function cargarChat() {
 async function enviarAlCoach(texto, opts = {}) {
   if (opts.mostrarUsuario !== false) {
     if (opts.thumbUrl) {
-      // Burbuja del usuario con miniatura de la foto (creada localmente, no XSS).
       const div = document.createElement("div");
       div.className = "bubble bubble--me";
       const img = document.createElement("img");
@@ -346,7 +338,6 @@ fotoInput.addEventListener("change", async () => {
   }
 });
 
-// Reduce la foto en el navegador (máx 1400px, JPEG 80%): sube rápido y barato.
 function comprimirImagen(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -371,7 +362,7 @@ function comprimirImagen(file) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const btnVoz = $("#btn-voz");
 if (!SR) {
-  btnVoz.hidden = true;      // navegador sin soporte (p. ej. Firefox)
+  btnVoz.hidden = true;
 } else {
   let rec = null, grabando = false;
   btnVoz.addEventListener("click", () => {
@@ -449,8 +440,6 @@ function renderFinanzas(f) {
   barIn.style.width = ratio + "%";
   barIn.style.background = f.deficit ? "var(--bad)" : "var(--good)";
 
-  // Modo arranque (llegó a mitad de mes con saldo declarado): el balance parte
-  // de su punto de partida, no del ingreso completo del mes.
   const labelBalance = document.querySelector(".hero__foot .hero__label");
   labelBalance.textContent = f.modo_arranque ? "Te queda (desde tu punto de partida)" : "Balance del mes";
 

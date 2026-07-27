@@ -1,12 +1,4 @@
-"""Configuración central de la app, leída desde variables de entorno.
-
-En desarrollo local, las variables se cargan desde un archivo .env (via
-python-dotenv). En producción se definen en el entorno del servidor / secretos
-de la plataforma. NADA de secretos vive en el código.
-
-Seguridad (fail-fast): en producción la app se NIEGA a arrancar si falta la clave
-de sesión, si el login no está configurado, etc. Nunca arranca "en modo abierto".
-"""
+"""Configuración central de la app, leída desde variables de entorno."""
 from __future__ import annotations
 
 import os
@@ -14,14 +6,13 @@ import secrets
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()  # carga .env si existe; en prod simplemente no hace nada
-except ImportError:  # dotenv es opcional en producción
+    load_dotenv()
+except ImportError:
     pass
 
 
 def _normalizar_db_url(url: str) -> str:
-    """SQLAlchemy exige el prefijo 'postgresql+psycopg://'. Muchas plataformas
-    entregan 'postgres://' o 'postgresql://' — lo normalizamos a psycopg v3."""
+    """Normaliza la URL de la BD al prefijo 'postgresql+psycopg://' que exige SQLAlchemy."""
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+psycopg://", 1)
     if url.startswith("postgresql://"):
@@ -34,54 +25,37 @@ class ConfigError(RuntimeError):
 
 
 class Config:
-    # --- Base de datos ---
     DATABASE_URL = _normalizar_db_url(os.environ.get("DATABASE_URL", "sqlite:///gastos.db"))
     _ES_SQLITE = DATABASE_URL.startswith("sqlite")
 
-    # --- Memoria del agente LangGraph (checkpointer) ---
-    # SQLite donde LangGraph persiste el estado por conversación; en producción
-    # con Postgres se usaría PostgresSaver sobre DATABASE_URL.
     CHECKPOINT_DB = os.environ.get("COACH_CHECKPOINT_DB", "checkpoints.db")
 
-    # --- Servidor ---
     HOST = os.environ.get("COACH_HOST", "127.0.0.1")
     PORT = int(os.environ.get("COACH_PORT", "8000"))
     HTTPS = os.environ.get("COACH_HTTPS", "0") == "1"
 
-    # --- Entorno: producción o desarrollo ---
-    # Sin COACH_ENV se infiere: Postgres o HTTPS => production; si no, development.
     _INDICIO_PROD = (not _ES_SQLITE) or HTTPS
     ENV = os.environ.get("COACH_ENV") or ("production" if _INDICIO_PROD else "development")
     IS_PRODUCTION = ENV == "production"
 
-    # --- Sesión ---
-    # SIN default usable: en dev se genera una clave efímera (la sesión se reinicia
-    # al reiniciar el proceso, aceptable en local); en prod DEBE venir del entorno.
     _SECRET_ENV = os.environ.get("COACH_SECRET_KEY", "").strip()
     SECRET_KEY = _SECRET_ENV or (None if IS_PRODUCTION else secrets.token_hex(32))
-    # Cookie Secure: siempre en producción; en dev depende de si sirves por HTTPS.
     SESSION_COOKIE_SECURE = HTTPS or IS_PRODUCTION
 
-    # --- API de Claude ---
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL_EXTRACTOR = os.environ.get("CLAUDE_MODEL_EXTRACTOR", "claude-haiku-4-5")
     CLAUDE_MODEL_COACH = os.environ.get("CLAUDE_MODEL_COACH", "claude-opus-4-8")
-    # Chat de coaching multi-turno: Sonnet equilibra calidad y costo.
     CLAUDE_MODEL_CHAT = os.environ.get("CLAUDE_MODEL_CHAT", "claude-sonnet-4-6")
 
-    # --- Google OAuth ---
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
-    # --- Modo demo (login local sin OAuth) ---
-    # Opt-in explícito; por defecto solo se permite fuera de producción.
     _DEMO_ENV = os.environ.get("COACH_ALLOW_DEMO")
     ALLOW_DEMO = (_DEMO_ENV == "1") if _DEMO_ENV is not None else (not IS_PRODUCTION)
 
     @staticmethod
     def _es_real(valor: str) -> bool:
-        """Un valor cuenta como configurado si no está vacío ni es un placeholder
-        del .env.example (evita que 'xxxxxxxx' pase por credencial válida)."""
+        """True si el valor no está vacío ni es un placeholder del .env.example."""
         v = (valor or "").strip()
         return bool(v) and not v.startswith("xxxxxxxx") and not v.startswith("pon-aqui")
 
@@ -97,8 +71,7 @@ class Config:
 
     @classmethod
     def validar(cls) -> list[str]:
-        """Valida la config al arrancar. Lanza ConfigError en producción si algo
-        es inseguro; devuelve una lista de advertencias no fatales."""
+        """Valida la config al arrancar; lanza ConfigError si algo es inseguro en producción."""
         avisos: list[str] = []
         if cls.IS_PRODUCTION:
             if not cls.SECRET_KEY or len(cls.SECRET_KEY) < 32:

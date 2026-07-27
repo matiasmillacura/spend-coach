@@ -1,18 +1,4 @@
-"""Interfaz de terminal del coach de gastos (opera sobre el usuario demo local).
-
-En la app web cada usuario entra con Google; este CLI es una utilidad de
-desarrollo que trabaja siempre con el usuario demo local de la base configurada.
-
-Uso:
-    python3 cli.py                 # modo conversacional (escribe gastos y comandos)
-    python3 cli.py "gasté 12 lucas en almuerzo"   # registra un gasto y sale
-
-Comandos dentro del modo conversacional:
-    resumen            resumen del mes actual con comentario del coach
-    lista              últimos gastos registrados
-    borrar <id>        elimina un gasto
-    salir / exit       terminar
-"""
+"""Interfaz de terminal del coach de gastos (opera sobre el usuario demo local)."""
 from __future__ import annotations
 
 import sys

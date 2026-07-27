@@ -1,9 +1,4 @@
-"""Resumen mensual + observaciones de hábitos (el lado 'coach' del proyecto).
-
-Los totales son 100% determinísticos (SQL, acotado por usuario). La API de Claude
-solo se usa para comentar los números en lenguaje natural, no para sumar. Si la
-API falla, se degrada con gracia y se entrega solo el resumen tabular.
-"""
+"""Resumen mensual + observaciones de hábitos (el lado 'coach' del proyecto)."""
 from __future__ import annotations
 
 import logging
@@ -38,7 +33,6 @@ def resumen_texto(user_id: int, anio: int, mes: int) -> str:
 
 
 def _comentario_llm(user_id: int, anio: int, mes: int) -> str:
-    """Pide a Claude una observación breve y útil comparando ingresos vs gastos."""
     from db import get_regla, ingreso_mensual_total, listar_metas, total_ahorro_mes
 
     r = resumen_mes(user_id, anio, mes)
@@ -82,10 +76,7 @@ ahorre y viva mejor. Nada de relleno ni listas largas. Tono amable, no culpabili
 
 
 def resumen_semanal(user_id: int) -> str | None:
-    """Resumen proactivo de la semana (para mostrar al abrir el chat).
-    Datos 100% determinísticos; Claude solo los redacta. Devuelve None si no
-    hubo movimiento (no vale la pena hablar por hablar). Lanza excepción si la
-    API falla (el caller decide reintentar en la próxima apertura)."""
+    """Resumen proactivo de la semana; None si no hubo movimiento."""
     from datetime import timedelta
 
     from db import gastos_rango, total_ahorro_rango
@@ -131,8 +122,8 @@ def coaching_mensual(user_id: int, anio: int, mes: int) -> str:
     try:
         comentario = _comentario_llm(user_id, anio, mes)
     except (ExtractorError, anthropic.APIError):
-        comentario = ""            # API caída/sin clave: degrada al resumen tabular
-    except Exception:              # imprevisto: no romper el dashboard, pero dejar rastro
+        comentario = ""
+    except Exception:
         log.exception("Fallo inesperado generando el comentario del coach")
         comentario = ""
     if comentario:

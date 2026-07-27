@@ -1,21 +1,4 @@
-"""Versión LangChain del extractor — compárala lado a lado con extractor.py.
-
-Misma tarea (texto informal chileno → gasto estructurado), pero la plomería de
-"structured output" la hace LangChain:
-
-  extractor.py (SDK anthropic a mano)      | extractor_lc.py (LangChain)
-  -----------------------------------------|------------------------------------
-  _TOOL dict con input_schema JSON escrito | class GastoExtraido(BaseModel) — el
-  a mano                                   | esquema sale de los tipos de Python
-  tool_choice={"type":"tool", ...} forzado | llm.with_structured_output(...)
-  recorrer resp.content buscando el bloque | (hace exactamente ESO por debajo:
-  tool_use y sacar block.input             | fuerza un tool y parsea el bloque)
-  validar tipos/campos a mano              | Pydantic valida y tipa solo
-
-Lo que NO cambia: el prompt (se reutiliza el de extractor.py), la jerga chilena
-(_parsear_monto) y las reglas de negocio (fecha no futura, categoría válida).
-Un framework reemplaza plomería, nunca tu lógica de dominio.
-"""
+"""Versión LangChain del extractor; equivalente a extractor.py."""
 from __future__ import annotations
 
 from datetime import date
@@ -27,28 +10,23 @@ from pydantic import BaseModel, Field
 
 from config import config
 from db import CATEGORIAS
-# Mismo prompt y validación chilena del original, para comparar 1 a 1.
 from extractor import ExtractorError, _parsear_monto, _prompt
 
 
 class GastoExtraido(BaseModel):
-    """El "input_schema" del original como modelo Pydantic: LangChain genera el
-    JSON Schema desde la clase y Pydantic valida tipos y enum de la respuesta."""
+    """Esquema Pydantic del gasto extraído."""
     es_gasto: bool = Field(description="true si el mensaje describe un gasto real")
     monto: Optional[int] = Field(description="monto en CLP (enteros), o null si no se menciona")
-    # Enum en runtime desde db.CATEGORIAS (el "enum" del schema escrito a mano).
     categoria: Literal[tuple(CATEGORIAS)]  # type: ignore[valid-type]
     descripcion: str = Field(description="descripción corta del gasto")
     fecha: str = Field(description="fecha del gasto en formato YYYY-MM-DD")
 
 
-# Cliente perezoso, igual que el original: se crea al primer uso.
 _llm = None
 
 
 def get_llm():
-    """ChatAnthropic: el chat model de LangChain sobre la API de Claude
-    (interfaz común entre proveedores)."""
+    """Chat model de LangChain sobre la API de Claude."""
     global _llm
     if not config.ANTHROPIC_API_KEY:
         raise ExtractorError(
@@ -65,17 +43,13 @@ def get_llm():
 
 
 def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
-    """Misma firma y contrato que extractor.extraer_gasto; _TOOL, tool_choice y
-    el bucle sobre resp.content los reemplaza with_structured_output."""
+    """Misma firma y contrato que extractor.extraer_gasto."""
     hoy = hoy or date.today()
 
-    # Por debajo hace lo mismo que extractor.py: define un tool con el schema
-    # de GastoExtraido y fuerza tool_choice.
     structured_llm = get_llm().with_structured_output(GastoExtraido)
 
     try:
-        gasto = structured_llm.invoke(_prompt(texto, hoy))  # → GastoExtraido, ya validado
-    # langchain-anthropic usa el SDK anthropic por debajo: mismas excepciones.
+        gasto = structured_llm.invoke(_prompt(texto, hoy))
     except anthropic.AuthenticationError as e:
         raise ExtractorError("La clave de la API de Claude es inválida o fue revocada.") from e
     except anthropic.RateLimitError as e:
@@ -91,16 +65,15 @@ def extraer_gasto(texto: str, hoy: date | None = None) -> dict:
     if gasto.monto is None:
         raise ValueError("No detecté el monto del gasto. Inténtalo más explícito.")
 
-    # Reglas de negocio idénticas al original (esto NUNCA lo hace el framework).
     d = {
         "es_gasto": True,
         "monto": _parsear_monto(gasto.monto),
-        "categoria": gasto.categoria,          # Pydantic ya garantizó el enum
+        "categoria": gasto.categoria,
         "descripcion": (gasto.descripcion or texto).strip()[:200],
     }
     try:
         f = date.fromisoformat(gasto.fecha)
     except ValueError:
         f = hoy
-    d["fecha"] = min(f, hoy).isoformat()       # nunca fecha futura
+    d["fecha"] = min(f, hoy).isoformat()
     return d

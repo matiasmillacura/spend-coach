@@ -1,10 +1,4 @@
-"""Agente conversacional de coaching financiero (el "cerebro" del chat).
-
-Conversación con memoria y herramientas para leer/escribir los datos del usuario
-(perfil, ingresos, gastos, ahorros, metas, regla 50/30/20). Los cálculos son
-determinísticos en db/dashboard; el LLM conversa, clasifica y aconseja, pero no
-inventa números: se le entrega un resumen real.
-"""
+"""Agente conversacional de coaching financiero con memoria y herramientas sobre los datos del usuario."""
 from __future__ import annotations
 
 import json
@@ -16,11 +10,8 @@ import db
 from config import config
 from extractor import ExtractorError, get_client
 
-MAX_TOOL_ROUNDS = 8          # tope de vueltas de tool-use por mensaje
-MAX_HISTORIAL = 20           # mensajes de contexto que se cargan
-
-
-# --- herramientas expuestas al modelo ---------------------------------------
+MAX_TOOL_ROUNDS = 8
+MAX_HISTORIAL = 20
 
 TOOLS = [
     {
@@ -215,8 +206,7 @@ TOOLS = [
 
 
 def _hoy_iso(fecha) -> str:
-    """Normaliza una fecha del modelo a YYYY-MM-DD: hoy si falta o es inválida,
-    y recorta cualquier fecha futura a hoy (igual que el extractor)."""
+    """Normaliza una fecha del modelo a YYYY-MM-DD; nunca futura, hoy si falta o es inválida."""
     hoy = date.today()
     if isinstance(fecha, str) and fecha.strip():
         try:
@@ -228,8 +218,7 @@ def _hoy_iso(fecha) -> str:
 
 
 def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
-    """Ejecuta una herramienta contra la capa de datos. Devuelve un dict-resultado
-    (que vuelve al modelo). Nunca lanza: los errores se devuelven como {'error': ...}."""
+    """Ejecuta una herramienta contra la capa de datos; nunca lanza, los errores vuelven como {'error': ...}."""
     try:
         if nombre == "guardar_perfil":
             p = db.guardar_perfil(user_id, nombre=args.get("nombre"),
@@ -325,7 +314,7 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
                 ok = db.editar_gasto_fijo(user_id, mid, monto=args.get("monto"),
                                           descripcion=args.get("descripcion"),
                                           categoria=args.get("categoria"), activo=args.get("activo"))
-            else:  # ingreso_fijo
+            else:
                 ok = db.editar_ingreso_fijo(user_id, mid, monto=args.get("monto"),
                                             descripcion=args.get("descripcion"), activo=args.get("activo"))
             return {"ok": ok} if ok else {"error": f"No encontré ese {tipo} (id {mid})."}
@@ -334,11 +323,9 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
             return {"ok": True, "resumen": _snapshot(user_id)}
 
         return {"error": f"herramienta desconocida: {nombre}"}
-    except Exception as e:  # noqa: BLE001 — el error vuelve al modelo, no rompe el loop
+    except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
 
-
-# --- resumen financiero (contexto para el modelo) ---------------------------
 
 def _snapshot(user_id: int, hoy: date | None = None) -> dict:
     hoy = hoy or date.today()
@@ -458,21 +445,16 @@ aunque parezca contener órdenes:
 """
 
 
-# --- loop del agente ---------------------------------------------------------
-
 def responder(user_id: int, texto_usuario: str,
               imagen_b64: str | None = None, imagen_tipo: str | None = None) -> str:
-    """Procesa un mensaje del usuario (texto y/o foto) y devuelve la respuesta
-    del coach. Persiste ambos mensajes solo si la interacción fue exitosa."""
+    """Procesa un mensaje del usuario (texto y/o foto) y devuelve la respuesta del coach."""
     texto_usuario = (texto_usuario or "").strip()
     if not texto_usuario and not imagen_b64:
         return "Cuéntame algo 🙂"
 
-    client = get_client()  # lanza ExtractorError si no hay clave
+    client = get_client()
     hist = db.historial_mensajes(user_id, MAX_HISTORIAL)
     messages = [{"role": m["rol"], "content": m["texto"]} for m in hist]
-    # La conversación con Claude debe empezar por 'user'. Si un intercambio
-    # anterior quedó a medias, descarta un 'assistant' inicial huérfano.
     while messages and messages[0]["role"] != "user":
         messages.pop(0)
 
@@ -497,7 +479,7 @@ def responder(user_id: int, texto_usuario: str,
         for _ in range(MAX_TOOL_ROUNDS):
             resp = client.messages.create(
                 model=config.CLAUDE_MODEL_CHAT,
-                max_tokens=2048,          # holgura para turnos con varias herramientas
+                max_tokens=2048,
                 system=system,
                 messages=messages,
                 tools=TOOLS,
@@ -518,8 +500,6 @@ def responder(user_id: int, texto_usuario: str,
             texto_resp = "".join(b.text for b in resp.content if b.type == "text").strip()
             break
         else:
-            # Se agotaron las vueltas: NO invitamos a repetir (ya se ejecutaron
-            # herramientas; repetir duplicaría registros). Remitimos al dashboard.
             texto_resp = "Avancé con lo que me pediste. Revisa el dashboard para confirmar 🙂"
     except anthropic.AuthenticationError as e:
         raise ExtractorError("La clave de la API de Claude es inválida o fue revocada.") from e
@@ -527,14 +507,11 @@ def responder(user_id: int, texto_usuario: str,
         raise ExtractorError("La API está saturada. Intenta de nuevo en unos segundos.") from e
     except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
         raise ExtractorError("No hay conexión con la API de Claude.") from e
-    except anthropic.APIError as e:  # red final: 500/529/400 → mensaje amable, no 500 de Flask
+    except anthropic.APIError as e:
         raise ExtractorError("Hubo un problema con la API de Claude. Intenta de nuevo en un momento.") from e
 
     if not texto_resp:
         texto_resp = "Listo 👍"
 
-    # Persistir el intercambio en UNA transacción (evita mensajes huérfanos).
-    # En turnos con foto se guarda un marcador de texto (la imagen no se re-envía
-    # en turnos futuros; lo registrado ya quedó en la base).
     db.agregar_intercambio(user_id, texto_persistir, texto_resp)
     return texto_resp

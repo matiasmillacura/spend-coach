@@ -1,9 +1,4 @@
-"""Arma el payload del dashboard con métricas de alto valor.
-
-Todo se calcula con SQL (determinístico) — no usa el LLM. Incluye el análisis
-financiero completo: ingresos vs gastos, balance, tasa de ahorro, disponible,
-alerta de déficit, metas con proyección y la regla 50/30/20 configurable.
-"""
+"""Arma el payload del dashboard (calculado con SQL, sin LLM)."""
 from __future__ import annotations
 
 import calendar
@@ -29,10 +24,8 @@ from db import (
     total_ingresos_variables_rango,
 )
 
-# Días mínimos de datos antes de proyectar: con menos, extrapolar es especulación.
 MIN_DIAS_PROYECCION = 4
 
-# Paleta por categoría (coincide con el frontend).
 COLORES = {
     "comida": "#f97316",
     "supermercado": "#22c55e",
@@ -52,21 +45,15 @@ def _mes_anterior(anio: int, mes: int) -> tuple[int, int]:
 
 
 def _proyeccion(montos: list[int], total: int, dia_actual: int, dias_mes: int) -> int | None:
-    """Estima el gasto de fin de mes de forma robusta.
-
-    - Devuelve None los primeros días (poca señal para extrapolar).
-    - No extrapola gastos atípicos/únicos (p. ej. arriendo): se cuentan una vez,
-      y solo el gasto "variable" se proyecta sobre los días que faltan.
-    """
+    """Estima el gasto de fin de mes sin extrapolar los gastos atípicos."""
     if dia_actual < MIN_DIAS_PROYECCION:
         return None
     if not montos or total <= 0:
         return 0
     montos_ord = sorted(montos)
     mediana = montos_ord[len(montos_ord) // 2]
-    # Atípico: individualmente supera 5x la mediana y además $100.000.
     umbral = max(mediana * 5, 100_000)
-    grandes = sum(m for m in montos if m > umbral)   # ya pagados; no se repiten
+    grandes = sum(m for m in montos if m > umbral)
     variable = max(0, total - grandes)
     tasa_variable = variable / dia_actual
     dias_restantes = dias_mes - dia_actual
@@ -74,8 +61,7 @@ def _proyeccion(montos: list[int], total: int, dia_actual: int, dias_mes: int) -
 
 
 def _asignar_porcentajes(categorias: list[dict], total: int) -> None:
-    """Asigna 'pct' entero a cada categoría garantizando que sumen 100
-    (método del resto mayor), evitando el clásico 33+33+33=99."""
+    """Asigna 'pct' entero por categoría garantizando que sumen 100 (resto mayor)."""
     if total <= 0 or not categorias:
         for c in categorias:
             c["pct"] = 0
@@ -83,7 +69,6 @@ def _asignar_porcentajes(categorias: list[dict], total: int) -> None:
     exactos = [c["total"] / total * 100 for c in categorias]
     pisos = [math.floor(x) for x in exactos]
     resto = 100 - sum(pisos)
-    # Reparte el resto a las categorías con mayor parte fraccionaria.
     orden = sorted(range(len(categorias)), key=lambda i: exactos[i] - pisos[i], reverse=True)
     for i in orden[:resto]:
         pisos[i] += 1
@@ -102,9 +87,7 @@ def _meses_entre(desde: date, hasta: date) -> int:
 
 
 def _analisis_meta(meta: dict, ahorrado: int, aporte_mes: int, ingreso: int, hoy: date) -> dict:
-    """Progreso y cuota sugerida de una meta, según su tipo.
-    - monto_fecha: progreso acumulado vs objetivo + cuota para llegar a tiempo (marca 'vencida').
-    - monto_mensual / porcentaje: progreso del MES en curso vs el objetivo mensual."""
+    """Progreso y cuota sugerida de una meta, según su tipo."""
     out = {**meta, "ahorrado": ahorrado, "objetivo": None, "progreso_pct": None,
            "cuota_sugerida": None, "meses_restantes": None, "nota": None}
 
@@ -123,9 +106,9 @@ def _analisis_meta(meta: dict, ahorrado: int, aporte_mes: int, ingreso: int, hoy
             except ValueError:
                 fobj = None
             if fobj and fobj <= hoy:
-                out["nota"] = "vencida"           # plazo cumplido y aún falta
+                out["nota"] = "vencida"
                 out["meses_restantes"] = 0
-                out["cuota_sugerida"] = falta      # habría que aportarlo ya
+                out["cuota_sugerida"] = falta
             elif fobj:
                 meses = _meses_entre(hoy, fobj)
                 out["meses_restantes"] = meses
@@ -133,13 +116,13 @@ def _analisis_meta(meta: dict, ahorrado: int, aporte_mes: int, ingreso: int, hoy
 
     elif meta["tipo"] == "monto_mensual" and meta.get("monto_mensual"):
         objetivo = meta["monto_mensual"]
-        out["objetivo"] = objetivo               # objetivo mensual
+        out["objetivo"] = objetivo
         out["cuota_sugerida"] = objetivo
         out["progreso_pct"] = min(100, round(aporte_mes / objetivo * 100)) if objetivo else None
 
     elif meta["tipo"] == "porcentaje" and meta.get("porcentaje"):
         objetivo = round(ingreso * meta["porcentaje"] / 100)
-        out["objetivo"] = objetivo               # objetivo mensual derivado del ingreso
+        out["objetivo"] = objetivo
         out["cuota_sugerida"] = objetivo
         out["progreso_pct"] = min(100, round(aporte_mes / objetivo * 100)) if objetivo else None
 
@@ -148,8 +131,7 @@ def _analisis_meta(meta: dict, ahorrado: int, aporte_mes: int, ingreso: int, hoy
 
 def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
               por_categoria: dict, hoy: date, fijos: list[dict] | None = None) -> dict:
-    """Ingresos vs gastos, balance, tasa de ahorro, disponible, déficit, regla,
-    metas, suscripciones (gastos fijos) y presupuestos por categoría."""
+    """Ingresos vs gastos, balance, regla, metas y presupuestos del mes."""
     fijos = fijos or []
     ingreso = ingreso_mensual_total(user_id, anio, mes)
     ahorro_reg = total_ahorro_mes(user_id, anio, mes)
@@ -162,9 +144,6 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
     regla = get_regla(user_id)
     def pct(x):
         return round(x / ingreso * 100) if ingreso > 0 else None
-    # En la regla 50/30/20, el "ahorro" es lo que queda tras necesidades y deseos
-    # (= balance). Así los tres tramos suman 100% del ingreso y coinciden con la
-    # tasa de ahorro. Los aportes explícitos a metas se muestran aparte (metas).
     reparto = {
         "necesidades": {"monto": grupos["necesidades"], "pct": pct(grupos["necesidades"]), "objetivo_pct": regla["pct_necesidades"]},
         "deseos":      {"monto": grupos["deseos"],      "pct": pct(grupos["deseos"]),      "objetivo_pct": regla["pct_deseos"]},
@@ -173,12 +152,8 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
 
     tasa_ahorro = round(balance / ingreso * 100) if ingreso > 0 else None
     objetivo_ahorro_mes = round(ingreso * regla["pct_ahorro"] / 100) if ingreso > 0 else 0
-    # Disponible para gastar sin comerte la meta de ahorro (según la regla).
     disponible = ingreso - objetivo_ahorro_mes - gasto_total if ingreso > 0 else None
 
-    # MODO ARRANQUE: quien llega a mitad de mes declara su saldo disponible y el
-    # balance de ESE mes parte de ahí (saldo + ingresos − gastos posteriores).
-    # La tasa de ahorro no se calcula (sería engañosa con medio mes fantasma).
     modo_arranque = False
     p = get_perfil(user_id) or {}
     if p.get("saldo_inicial") is not None and p.get("saldo_inicial_fecha"):
@@ -199,7 +174,6 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
         for m in metas
     ]
 
-    # Presupuestos por categoría: tope vs gastado (incluye gastos fijos de esa categoría).
     presupuestos = []
     for p in listar_presupuestos(user_id):
         gastado = por_categoria.get(p["categoria"], {}).get("total", 0)
@@ -233,8 +207,7 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
 
 
 def _con_fijos(por_categoria: dict, fijos: list[dict]) -> dict:
-    """Suma los gastos fijos activos al desglose por categoría del mes.
-    Los fijos cuentan cada mes aunque no tengan una fila con fecha."""
+    """Suma los gastos fijos activos al desglose por categoría del mes."""
     buckets = {cat: {"total": d["total"], "n": d["n"]} for cat, d in por_categoria.items()}
     for f in fijos:
         b = buckets.setdefault(f["categoria"], {"total": 0, "n": 0})
@@ -244,8 +217,7 @@ def _con_fijos(por_categoria: dict, fijos: list[dict]) -> dict:
 
 
 def _insights(buckets: dict, prev_buckets: dict) -> list[str]:
-    """Frases automáticas con los cambios más notables vs el mes anterior.
-    Determinístico (sin LLM): delta relevante = ±25% y al menos $10.000."""
+    """Frases automáticas con los cambios más notables vs el mes anterior."""
     out = []
     for cat in set(buckets) | set(prev_buckets):
         cur = buckets.get(cat, {}).get("total", 0)
@@ -268,8 +240,7 @@ def _insights(buckets: dict, prev_buckets: dict) -> list[str]:
 
 def construir(user_id: int, hoy: date | None = None,
               anio: int | None = None, mes: int | None = None) -> dict:
-    """Payload del dashboard. Con anio/mes muestra un mes histórico (navegación);
-    sin ellos, el mes en curso."""
+    """Payload del dashboard; con anio/mes muestra un mes histórico."""
     hoy = hoy or date.today()
     if anio is None or mes is None:
         anio, mes = hoy.year, hoy.month
@@ -282,8 +253,6 @@ def construir(user_id: int, hoy: date | None = None,
     pa, pm = _mes_anterior(anio, mes)
     r_prev = resumen_mes(user_id, pa, pm)
 
-    # Los fijos cuentan en el mes visto y en el anterior (misma configuración),
-    # así la comparación es justa y el donut cuadra con el total.
     buckets = _con_fijos(r["por_categoria"], fijos)
     prev_buckets = _con_fijos(r_prev["por_categoria"], fijos)
     total = sum(b["total"] for b in buckets.values())
@@ -292,15 +261,12 @@ def construir(user_id: int, hoy: date | None = None,
     dias_mes = calendar.monthrange(anio, mes)[1]
     dia_actual = hoy.day if es_mes_actual else dias_mes
 
-    # Proyección: solo tiene sentido en el mes en curso. Se proyecta el gasto
-    # variable y se suman los fijos (que son ciertos).
     proyeccion = None
     if es_mes_actual:
         montos = [g["monto"] for g in gastos_del_mes(user_id, anio, mes)]
         proy_var = _proyeccion(montos, r["total"], dia_actual, dias_mes)
         proyeccion = proy_var + fijo_total if proy_var is not None else None
 
-    # Serie diaria del gasto variable (los fijos no tienen día).
     serie_raw = serie_diaria(user_id, anio, mes)
     dias_registrados = len(serie_raw)
     promedio_diario = round(r["total"] / dias_registrados) if dias_registrados else 0
@@ -323,7 +289,6 @@ def construir(user_id: int, hoy: date | None = None,
         })
     _asignar_porcentajes(categorias, total)
 
-    # Mayor gasto: el variable más grande o el fijo más caro, lo que gane.
     mg = mayor_gasto(user_id, anio, mes)
     mayor = None
     if mg:
@@ -342,7 +307,7 @@ def construir(user_id: int, hoy: date | None = None,
         "total_prev": total_prev,
         "mes_prev_con_datos": total_prev > 0,
         "variacion_pct": variacion,
-        "proyeccion": proyeccion,               # None en meses históricos o primeros días
+        "proyeccion": proyeccion,
         "promedio_diario": promedio_diario,
         "gasto_hoy": gasto_hoy,
         "dias_registrados": dias_registrados,
