@@ -4,7 +4,7 @@ Flask==3.0.3
 Authlib==1.3.2
 requests==2.32.3            # transporte HTTP que usa Authlib para el OAuth de Google
 SQLAlchemy==2.0.36
-anthropic==0.69.0          # cliente oficial de la API de Claude (extractor + coach)
+anthropic==0.117.0         # cliente oficial de la API de Claude (extractor + coach)
 langchain-anthropic==1.4.8 # chat model de LangChain sobre Claude (extractor_lc, coach_agent_lg)
 langgraph==1.2.9           # grafo de agente prehecho: create_react_agent (coach_agent_lg)
 langgraph-checkpoint-sqlite==3.1.0  # memoria del agente en desarrollo (checkpoints.db)
