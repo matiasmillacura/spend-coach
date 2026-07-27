@@ -41,12 +41,79 @@ async function api(path, opts = {}) {
 
 // ---------- pantallas ----------
 function configLoginButton(estado) {
-  const btn = $("#login-btn");
   const e = estado || {};
-  if (e.auth_google) btn.textContent = "Entrar con Google";
-  else if (e.demo) btn.textContent = "Entrar (modo demo)";
-  else btn.textContent = "Login no configurado";
+  // Sin Google configurado: en demo el botón entra igual (vía /login); si no, se oculta.
+  document.querySelectorAll(".js-google").forEach((btn) => {
+    if (e.auth_google) return;                    // texto por defecto del HTML
+    if (e.demo) btn.querySelector(".js-google-text").textContent = "Entrar (modo demo)";
+    else btn.hidden = true;
+  });
 }
+
+// Alternar entre iniciar sesión y crear cuenta
+$("#go-register").addEventListener("click", () => {
+  $("#card-login").hidden = true;
+  $("#card-register").hidden = false;
+  $("#rg-fecha").max = new Date().toISOString().slice(0, 10);
+});
+$("#go-login").addEventListener("click", () => {
+  $("#card-register").hidden = true;
+  $("#card-login").hidden = false;
+});
+
+function entrar(user) {
+  if (!user.nombre || !user.fecha_nacimiento) showOnboarding(user);
+  else showApp(user);
+}
+
+$("#login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("#li-error");
+  err.hidden = true;
+  try {
+    const res = await fetch("/auth/login", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("#li-email").value, password: $("#li-pass").value }),
+    });
+    const data = await res.json();
+    if (data.ok) return entrar(data.user);
+    err.textContent = data.error || "No pudimos iniciar sesión.";
+    err.hidden = false;
+  } catch (e2) {
+    err.textContent = "Sin conexión con el servidor.";
+    err.hidden = false;
+  }
+});
+
+$("#register-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("#rg-error");
+  err.hidden = true;
+  try {
+    const res = await fetch("/auth/register", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nombre_completo: $("#rg-nombre").value,
+        apodo: $("#rg-apodo").value,
+        rut: $("#rg-rut").value,
+        fecha_nacimiento: $("#rg-fecha").value,
+        email: $("#rg-email").value,
+        password: $("#rg-pass").value,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) return entrar(data.user);
+    err.textContent = data.error || "No pudimos crear la cuenta.";
+    err.hidden = false;
+  } catch (e2) {
+    err.textContent = "Sin conexión con el servidor.";
+    err.hidden = false;
+  }
+});
 function showLogin() {
   document.body.classList.remove("chat-open");
   $("#login-gate").hidden = false;
@@ -67,7 +134,7 @@ function showApp(user) {
   $("#onboarding").hidden = true;
   $("#app").hidden = false;
   const primer = ((USUARIO && USUARIO.nombre) || "").split(" ")[0];
-  $("#greet-name").textContent = primer ? `Hola, ${primer} 👋` : "Hola 👋";
+  $("#greet-name").textContent = primer ? `Hola, ${primer}` : "Hola";
   cargarDashboard();
   // Onboarding conversacional pendiente (ingresos/meta): directo al chat.
   if (USUARIO && !USUARIO.onboarding_completo) goChat();

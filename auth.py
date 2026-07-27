@@ -1,9 +1,11 @@
-"""Autenticación con Google (OpenID Connect) usando Authlib.
+"""Autenticación: Google (OpenID Connect via Authlib) y correo+contraseña.
 
 Flujo:
-  /login          → redirige a Google (o login demo si no hay credenciales)
-  /auth/callback  → Google vuelve aquí; creamos/actualizamos el usuario y abrimos sesión
-  /logout         → cierra la sesión
+  /login               → redirige a Google (o login demo si no hay credenciales)
+  /auth/callback       → Google vuelve aquí; creamos/actualizamos el usuario y abrimos sesión
+  POST /auth/register  → crea cuenta con correo/contraseña (+ RUT validado) y abre sesión
+  POST /auth/login     → login con correo/contraseña
+  /logout              → cierra la sesión
 
 La sesión guarda solo `user_id` en una cookie firmada por Flask. El decorador
 `login_required` protege las rutas de API devolviendo 401 JSON si no hay sesión.
@@ -13,10 +15,13 @@ usuario local único. Sirve para desarrollo sin montar OAuth.
 """
 from __future__ import annotations
 
+import re
+from datetime import date
 from functools import wraps
 
 from authlib.integrations.flask_client import OAuth
-from flask import Blueprint, jsonify, redirect, session, url_for
+from flask import Blueprint, jsonify, redirect, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 from config import config
@@ -71,6 +76,85 @@ def callback():
     session.clear()               # evita fijación de sesión: sesión nueva tras login
     session["user_id"] = u["id"]
     return redirect("/")
+
+
+# --- registro y login con correo/contraseña ---------------------------------
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+
+
+def validar_rut(rut: str) -> str | None:
+    """Valida un RUT chileno (módulo 11) y lo devuelve normalizado (12345678-5).
+    None si es inválido. Acepta puntos, guión y dígito verificador k/K."""
+    limpio = re.sub(r"[^0-9kK]", "", rut or "")
+    if not (2 <= len(limpio) <= 9):
+        return None
+    cuerpo, dv = limpio[:-1], limpio[-1].upper()
+    if not cuerpo.isdigit():
+        return None
+    suma, factor = 0, 2
+    for d in reversed(cuerpo):
+        suma += int(d) * factor
+        factor = 2 if factor == 7 else factor + 1
+    resto = 11 - (suma % 11)
+    dv_ok = "0" if resto == 11 else ("K" if resto == 10 else str(resto))
+    return f"{cuerpo}-{dv_ok}" if dv == dv_ok else None
+
+
+def _edad_valida(fecha_iso: str) -> date | None:
+    try:
+        nac = date.fromisoformat(fecha_iso)
+    except (TypeError, ValueError):
+        return None
+    hoy = date.today()
+    edad = hoy.year - nac.year - ((hoy.month, hoy.day) < (nac.month, nac.day))
+    return nac if 5 <= edad <= 120 else None
+
+
+@auth_bp.post("/auth/register")
+def register():
+    """Crea la cuenta manual y abre sesión. Errores como JSON amable, nunca 500."""
+    d = request.get_json(silent=True) or {}
+    email = (d.get("email") or "").strip().lower()
+    password = d.get("password") or ""
+    nombre_completo = (d.get("nombre_completo") or "").strip()
+    apodo = (d.get("apodo") or "").strip() or nombre_completo.split(" ")[0]
+    fecha = _edad_valida(d.get("fecha_nacimiento") or "")
+
+    if not _EMAIL_RE.match(email):
+        return jsonify({"ok": False, "error": "Ese correo no se ve válido."}), 400
+    if len(password) < 8:
+        return jsonify({"ok": False, "error": "La contraseña debe tener al menos 8 caracteres."}), 400
+    if len(nombre_completo) < 3:
+        return jsonify({"ok": False, "error": "Cuéntanos tu nombre completo."}), 400
+    rut = validar_rut(d.get("rut") or "")
+    if not rut:
+        return jsonify({"ok": False, "error": "El RUT no es válido. Revisa el dígito verificador."}), 400
+    if not fecha:
+        return jsonify({"ok": False, "error": "Revisa tu fecha de nacimiento."}), 400
+
+    try:
+        u = db.crear_usuario_password(
+            email=email, password_hash=generate_password_hash(password),
+            apodo=apodo, nombre_completo=nombre_completo, rut=rut, fecha_nacimiento=fecha,
+        )
+    except ValueError as e:      # correo o RUT ya en uso
+        return jsonify({"ok": False, "error": str(e)}), 409
+    session.clear()              # sesión nueva tras registro (evita fijación)
+    session["user_id"] = u["id"]
+    return jsonify({"ok": True, "user": db.get_perfil(u["id"])})
+
+
+@auth_bp.post("/auth/login")
+def login_password():
+    d = request.get_json(silent=True) or {}
+    cred = db.get_credenciales_por_email(d.get("email") or "")
+    # Mensaje único para correo inexistente y clave mala: no revelamos cuál falló.
+    if not cred or not check_password_hash(cred["password_hash"], d.get("password") or ""):
+        return jsonify({"ok": False, "error": "Correo o contraseña incorrectos."}), 401
+    session.clear()
+    session["user_id"] = cred["id"]
+    return jsonify({"ok": True, "user": db.get_perfil(cred["id"])})
 
 
 @auth_bp.route("/logout")

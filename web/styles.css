@@ -369,3 +369,59 @@ body.chat-open .fab { opacity: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- Íconos (Material Symbols) ---------- */
+.ms {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal; font-style: normal;
+  font-size: 1.2em; line-height: 1;
+  display: inline-block; vertical-align: -0.18em;
+  letter-spacing: normal; text-transform: none;
+  white-space: nowrap; direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+.icon-btn .ms, .composer__tool .ms { font-size: 21px; vertical-align: middle; }
+.month-nav__btn .ms { font-size: 17px; vertical-align: middle; }
+.composer__send .ms { font-size: 20px; vertical-align: middle; }
+.fab__icon.ms { font-size: 20px; }
+.card__title .ms { font-size: 16px; color: var(--accent); margin-right: 2px; }
+.alert .ms { font-size: 16px; }
+
+/* ---------- Login / registro ---------- */
+.gate-logo {
+  width: 64px; height: 64px; margin: 0 auto;
+  display: grid; place-items: center;
+  background: var(--grad); border-radius: 19px;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, .35);
+}
+.gate-logo .ms { font-size: 34px; color: #fff; }
+.auth-form { display: grid; gap: 12px; text-align: left; margin-top: 4px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field__hint { font-weight: 400; opacity: .75; }
+
+.divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 18px 0; color: var(--muted); font-size: 13px;
+}
+.divider::before, .divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
+
+/* Botón "Continuar con Google" (estilo oficial para tema oscuro) */
+.btn-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 12px 16px; border-radius: 12px;
+  background: #131314; border: 1px solid #3c4043; color: #e3e3e3;
+  font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.btn-google:hover { background: #1b1c1e; border-color: #5f6368; }
+.btn-google:active { transform: scale(.98); }
+.g-logo { flex: none; }
+
+.auth-switch { margin: 18px 0 0; font-size: 14px; color: var(--muted); text-align: center; }
+.link-btn {
+  background: none; border: 0; padding: 0;
+  color: var(--accent); font: inherit; font-weight: 700; cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }

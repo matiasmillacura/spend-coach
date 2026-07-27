@@ -97,6 +97,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     nombre: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     foto_url: Mapped[str | None] = mapped_column(String(1000))
+    # Login con contraseña (alternativa a Google). NULL para cuentas de Google.
+    password_hash: Mapped[str | None] = mapped_column(String(256))
+    rut: Mapped[str | None] = mapped_column(String(12), index=True)      # normalizado: 12345678-5
+    nombre_completo: Mapped[str | None] = mapped_column(String(200))
     # Perfil financiero (se completa en el onboarding conversacional).
     fecha_nacimiento: Mapped[date | None] = mapped_column(Date)
     onboarding_paso: Mapped[str] = mapped_column(String(20), nullable=False, default="nombre")
@@ -272,6 +276,9 @@ def init_db() -> None:
             "ultima_semana_resumen": "VARCHAR(10)",
             "saldo_inicial": "INTEGER",
             "saldo_inicial_fecha": "DATE",
+            "password_hash": "VARCHAR(256)",
+            "rut": "VARCHAR(12)",
+            "nombre_completo": "VARCHAR(200)",
         }
         with engine.begin() as conn:
             for col, tipo in faltantes.items():
@@ -357,6 +364,40 @@ def get_or_create_demo_user() -> dict:
             s.add(u)
             s.flush()
         return {"id": u.id, "email": u.email, "nombre": u.nombre, "foto_url": u.foto_url}
+
+
+def crear_usuario_password(
+    email: str, password_hash: str, apodo: str,
+    nombre_completo: str, rut: str | None, fecha_nacimiento,
+) -> dict:
+    """Crea una cuenta con contraseña (registro manual). El apodo se guarda en
+    `nombre` (el mismo campo que usa el coach para dirigirse al usuario).
+    Lanza ValueError si el correo o el RUT ya están en uso."""
+    email = (email or "").strip().lower()
+    with session_scope() as s:
+        if s.scalar(select(User).where(func.lower(User.email) == email)):
+            raise ValueError("Ese correo ya tiene una cuenta. Si entraste con Google, usa ese botón.")
+        if rut and s.scalar(select(User).where(User.rut == rut)):
+            raise ValueError("Ese RUT ya está registrado.")
+        u = User(
+            google_sub=None, email=email, password_hash=password_hash,
+            nombre=(apodo or "").strip()[:200],
+            nombre_completo=(nombre_completo or "").strip()[:200],
+            rut=rut, fecha_nacimiento=_a_fecha(fecha_nacimiento),
+        )
+        s.add(u)
+        s.flush()
+        return {"id": u.id, "email": u.email, "nombre": u.nombre}
+
+
+def get_credenciales_por_email(email: str) -> dict | None:
+    """Para el login manual: id + hash de la cuenta con contraseña de ese correo.
+    None si no existe (o si ese correo solo entra con Google)."""
+    email = (email or "").strip().lower()
+    with session_scope() as s:
+        u = s.scalar(select(User).where(
+            func.lower(User.email) == email, User.password_hash.is_not(None)))
+        return {"id": u.id, "password_hash": u.password_hash} if u else None
 
 
 # --- gastos (todo acotado por user_id) --------------------------------------
@@ -535,6 +576,9 @@ def _perfil_dict(u: User) -> dict:
         "onboarding_completo": u.onboarding_completo,
         "saldo_inicial": u.saldo_inicial,
         "saldo_inicial_fecha": u.saldo_inicial_fecha.isoformat() if u.saldo_inicial_fecha else None,
+        "nombre_completo": u.nombre_completo,
+        "rut": u.rut,
+        "metodo_login": "google" if u.google_sub else ("password" if u.password_hash else "demo"),
     }
 
 
