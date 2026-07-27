@@ -441,3 +441,4 @@ body.chat-open .fab { opacity: 0; pointer-events: none; }
   color: var(--accent); font: inherit; font-weight: 700; cursor: pointer;
 }
 .link-btn:hover { text-decoration: underline; }
+.field__input--error { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(248, 113, 113, .18); }

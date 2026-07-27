@@ -88,6 +88,13 @@ $("#register-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const err = $("#rg-error");
   err.hidden = true;
+  if (!rutValido($("#rg-rut").value)) {
+    $("#rg-rut").classList.add("field__input--error");
+    $("#rg-rut").focus();
+    err.textContent = "El RUT no es válido. Revisa el dígito verificador.";
+    err.hidden = false;
+    return;
+  }
   try {
     const res = await fetch("/auth/register", {
       method: "POST",
@@ -111,6 +118,44 @@ $("#register-form").addEventListener("submit", async (e) => {
     err.hidden = false;
   }
 });
+// ---------- RUT: formato en vivo y dígito verificador (módulo 11) ----------
+function limpiarRut(v) {
+  return (v || "").replace(/[^0-9kK]/g, "").toUpperCase().slice(0, 9);
+}
+function formatearRut(v) {
+  const s = limpiarRut(v);
+  if (s.length <= 1) return s;
+  const cuerpo = s.slice(0, -1).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return cuerpo + "-" + s.slice(-1);
+}
+function rutValido(v) {
+  const s = limpiarRut(v);
+  if (s.length < 2) return false;
+  const cuerpo = s.slice(0, -1);
+  if (!/^\d+$/.test(cuerpo)) return false;
+  let suma = 0;
+  let factor = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--) {
+    suma += Number(cuerpo[i]) * factor;
+    factor = factor === 7 ? 2 : factor + 1;
+  }
+  const resto = 11 - (suma % 11);
+  const dv = resto === 11 ? "0" : resto === 10 ? "K" : String(resto);
+  return s.slice(-1) === dv;
+}
+
+const rutInput = $("#rg-rut");
+rutInput.addEventListener("input", () => {
+  const alFinal = rutInput.selectionStart === rutInput.value.length;
+  rutInput.value = formatearRut(rutInput.value);
+  if (alFinal) rutInput.setSelectionRange(rutInput.value.length, rutInput.value.length);
+  rutInput.classList.remove("field__input--error");
+});
+rutInput.addEventListener("blur", () => {
+  const incompleto = limpiarRut(rutInput.value).length < 2;
+  rutInput.classList.toggle("field__input--error", !incompleto && !rutValido(rutInput.value));
+});
+
 function showLogin() {
   document.body.classList.remove("chat-open");
   $("#login-gate").hidden = false;
