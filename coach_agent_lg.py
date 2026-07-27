@@ -14,7 +14,13 @@ from langgraph.errors import GraphRecursionError
 from langgraph.prebuilt import create_react_agent
 
 import db
-from coach_agent import MAX_HISTORIAL, MAX_TOOL_ROUNDS, TOOLS, _ejecutar_tool, _system_prompt
+from coach_agent import (
+    MAX_HISTORIAL,
+    MAX_TOOL_ROUNDS,
+    _ejecutar_tool,
+    _system_prompt,
+    tools_disponibles,
+)
 from config import config
 from extractor import ExtractorError
 
@@ -88,7 +94,7 @@ def _tools_para(user_id: int) -> list[StructuredTool]:
             args_schema=spec["input_schema"],
             func=_hacer_func(spec["name"]),
         )
-        for spec in TOOLS
+        for spec in tools_disponibles()
     ]
 
 

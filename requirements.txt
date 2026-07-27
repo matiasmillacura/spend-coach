@@ -7,6 +7,8 @@ langchain-anthropic==1.4.8
 langgraph==1.2.9
 langgraph-checkpoint-sqlite==3.1.0
 langgraph-checkpoint-postgres==3.1.0
+langchain-voyageai==0.4.0
+langchain-postgres==0.0.17
 python-dotenv==1.0.1
 gunicorn==23.0.0
 psycopg[binary]==3.2.3

@@ -47,6 +47,14 @@ class Config:
     CLAUDE_MODEL_COACH = os.environ.get("CLAUDE_MODEL_COACH", "claude-opus-4-8")
     CLAUDE_MODEL_CHAT = os.environ.get("CLAUDE_MODEL_CHAT", "claude-sonnet-4-6")
 
+    # Búsqueda semántica de gastos (RAG). Sin clave, la herramienta no se ofrece al coach.
+    VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
+    VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3.5-lite")
+
+    @classmethod
+    def rag_habilitado(cls) -> bool:
+        return cls._es_real(cls.VOYAGE_API_KEY)
+
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 

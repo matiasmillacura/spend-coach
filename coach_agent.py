@@ -204,6 +204,32 @@ TOOLS = [
     },
 ]
 
+TOOL_BUSQUEDA_SEMANTICA = {
+    "name": "buscar_gastos_similares",
+    "description": (
+        "Busca en TODO el historial de gastos por SIGNIFICADO, no por categoría ni "
+        "palabra exacta. Úsala cuando pregunten por un tema que no calza con una "
+        "categoría: 'cuánto llevo gastado en el perro', 'cosas del auto', 'mis cafés', "
+        "'gastos del colegio de los niños'. Encuentra 'veterinario' y 'pipeta antipulgas' "
+        "aunque estén en categorías distintas. Para totales de una categoría o de un mes "
+        "usa consultar_resumen o listar_movimientos, que son exactos."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "consulta": {"type": "string", "description": "tema a buscar, en lenguaje natural"},
+        },
+        "required": ["consulta"],
+    },
+}
+
+
+def tools_disponibles() -> list[dict]:
+    """TOOLS + la búsqueda semántica cuando hay clave de embeddings configurada."""
+    if config.rag_habilitado():
+        return TOOLS + [TOOL_BUSQUEDA_SEMANTICA]
+    return TOOLS
+
 
 def _hoy_iso(fecha) -> str:
     """Normaliza una fecha del modelo a YYYY-MM-DD; nunca futura, hoy si falta o es inválida."""
@@ -321,6 +347,10 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
 
         if nombre == "consultar_resumen":
             return {"ok": True, "resumen": _snapshot(user_id)}
+
+        if nombre == "buscar_gastos_similares":
+            import rag_gastos
+            return rag_gastos.buscar_resumido(user_id, args.get("consulta", ""))
 
         return {"error": f"herramienta desconocida: {nombre}"}
     except Exception as e:  # noqa: BLE001
@@ -493,7 +523,7 @@ def responder(user_id: int, texto_usuario: str,
                 max_tokens=2048,
                 system=system,
                 messages=messages,
-                tools=TOOLS,
+                tools=tools_disponibles(),
             )
             if resp.stop_reason == "tool_use":
                 messages.append({"role": "assistant", "content": resp.content})
