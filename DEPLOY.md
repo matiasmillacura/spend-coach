@@ -11,22 +11,19 @@ nadie la usa por ~15 min, la primera visita tarda ~30–60 s en despertar.
 3. Copia el **connection string** (`postgresql://usuario:clave@...neon.tech/...`).
    Guárdalo: es tu `DATABASE_URL`.
 
-## 2. Sube el código a GitHub (5 min)
+> ⚠️ No uses el Postgres gratis de Render: expira a los 30 días y borra los
+> datos. El de Neon no expira (se suspende cuando no se usa y despierta solo).
 
-El repo git ya está inicializado y los secretos están fuera (`.gitignore` cubre
-`.env` y `*.db`). Solo falta:
+## 2. Sube el código a GitHub (listo)
 
-```bash
-# crea un repo vacío en https://github.com/new (privado está bien) y luego:
-cd coach_gastos
-git remote add origin https://github.com/TU-USUARIO/coach-gastos.git
-git push -u origin main
-```
+El repo ya vive en <https://github.com/matiasmillacura/spend-coach> y los
+secretos están fuera (`.gitignore` cubre `.env` y `*.db`). Para actualizar:
+`git push origin main`.
 
 ## 3. Servicio web — Render (10 min)
 
 1. Crea cuenta en <https://render.com> (con tu GitHub).
-2. **New + → Blueprint** → elige tu repo `coach-gastos` (Render lee `render.yaml`).
+2. **New + → Blueprint** → elige tu repo `spend-coach` (Render lee `render.yaml`).
 3. Cuando pida las variables marcadas como secretas, pega:
    - `ANTHROPIC_API_KEY` → tu clave de <https://console.anthropic.com>
    - `DATABASE_URL` → el connection string de Neon (paso 1)
@@ -54,6 +51,13 @@ git push -u origin main
 - **Android/Chrome:** menú ⋮ → "Agregar a pantalla de inicio" (o el aviso de
   instalación). **iPhone/Safari:** Compartir → "Agregar a inicio".
 - Queda con ícono propio, pantalla completa y abre al instante (PWA).
+
+## Motor del coach en producción
+
+En producción NO definas `COACH_ENGINE` (usa el motor original): el motor
+LangGraph guarda su memoria en un archivo SQLite (`checkpoints.db`) y el disco
+de Render es efímero — cada redeploy la borraría. Para usar LangGraph en prod
+hay que migrar el checkpointer a Postgres (`langgraph-checkpoint-postgres`).
 
 ## Mantención
 

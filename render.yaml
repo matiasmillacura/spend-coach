@@ -2,7 +2,7 @@
 # La base de datos vive en Neon (Postgres gratis): pega su URL en DATABASE_URL.
 services:
   - type: web
-    name: coach-gastos
+    name: spend-coach
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
