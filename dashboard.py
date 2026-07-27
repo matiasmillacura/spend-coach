@@ -226,7 +226,7 @@ def _insights(buckets: dict, prev_buckets: dict) -> list[str]:
         if abs(diff) < 10_000:
             continue
         if prev == 0:
-            out.append((abs(diff), f"🆕 {cat}: apareció este mes (+${diff:,})".replace(",", ".")))
+            out.append((abs(diff), f"+ {cat}: apareció este mes (+${diff:,})".replace(",", ".")))
         else:
             pct = round(diff / prev * 100)
             if abs(pct) < 25:

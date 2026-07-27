@@ -445,7 +445,7 @@ function renderFinanzas(f) {
 
   const tasa = $("#fin-tasa");
   if (f.modo_arranque) {
-    tasa.textContent = "🌱 mes de arranque";
+    tasa.textContent = "mes de arranque";
     tasa.className = "badge badge--neutral";
   } else if (f.tasa_ahorro_pct == null) {
     tasa.textContent = "—"; tasa.className = "badge badge--neutral";
