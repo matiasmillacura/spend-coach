@@ -1,7 +1,7 @@
 {
   "name": "Coach de Gastos",
   "short_name": "Coach",
-  "description": "Tu coach de finanzas personales: registra por chat, foto o voz y mira tu mes de un vistazo.",
+  "description": "App de gestión de gastos personales: registra conversando, con foto de la boleta o por voz, y mira tu mes de un vistazo.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

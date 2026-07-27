@@ -85,6 +85,16 @@ def create_app() -> Flask:
     def icon512():
         return _static("icon-512.png")
 
+    @app.get("/logo.svg")
+    def logo():
+        return _static("logo.svg")
+
+    @app.get("/og.png")
+    def og():
+        resp = send_from_directory(WEB_DIR, "og.png")
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        return resp
+
     @app.get("/api/me")
     def me():
         uid = current_user_id()

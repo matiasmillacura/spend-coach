@@ -1,6 +1,6 @@
 /* Service worker del Coach de Gastos: cachea el shell; la API nunca se cachea. */
-const CACHE = "coach-shell-v1";
-const SHELL = ["/", "/app.js", "/styles.css", "/manifest.json", "/icon-192.png", "/icon-512.png"];
+const CACHE = "coach-shell-v2";
+const SHELL = ["/", "/app.js", "/styles.css", "/manifest.json", "/logo.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

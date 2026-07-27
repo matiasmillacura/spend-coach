@@ -4,7 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="theme-color" content="#0a0e18" />
-  <title>Coach de Gastos</title>
+  <title>Coach de Gastos — App de gestión de gastos personales</title>
+  <meta name="description" content="Registra lo que gastas conversando, con una foto de la boleta o por voz. Tu balance, presupuestos y metas de ahorro, al día." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Coach de Gastos" />
+  <meta property="og:title" content="Coach de Gastos — App de gestión de gastos personales" />
+  <meta property="og:description" content="Registra lo que gastas conversando, con una foto de la boleta o por voz. Tu balance, presupuestos y metas de ahorro, al día." />
+  <meta property="og:url" content="https://spend-coach-dzaa.onrender.com/" />
+  <meta property="og:image" content="https://spend-coach-dzaa.onrender.com/og.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Coach de Gastos: balance del mes con ingresos, gastos y tasa de ahorro" />
+  <meta property="og:locale" content="es_CL" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet"
@@ -22,10 +38,11 @@
   <div id="login-gate" class="gate" hidden>
 
     <div id="card-login" class="gate-card gate-card--left">
-      <div class="gate-logo"><span class="ms">savings</span></div>
+      <img class="gate-logo" src="/logo.svg" width="64" height="64" alt="" />
       <h1 class="gate-card__title">Coach de Gastos</h1>
+      <p class="gate-card__tag">App de gestión de gastos personales</p>
       <p class="gate-card__sub">
-        Conversa con tu coach, registra tu plata sin planillas y mira tu mes de un vistazo.
+        Registra lo que gastas conversando, con una foto de la boleta o por voz.
       </p>
 
       <form id="login-form" class="auth-form" novalidate>
@@ -61,7 +78,7 @@
     </div>
 
     <div id="card-register" class="gate-card gate-card--left" hidden>
-      <div class="gate-logo"><span class="ms">savings</span></div>
+      <img class="gate-logo" src="/logo.svg" width="64" height="64" alt="" />
       <h1 class="gate-card__title">Crea tu cuenta</h1>
       <p class="gate-card__sub">Un minuto y quedas dentro — lo demás lo conversas con tu coach.</p>
 
@@ -122,7 +139,7 @@
   <!-- ===================== ONBOARDING EXPRESS ===================== -->
   <div id="onboarding" class="gate" hidden>
     <div class="gate-card gate-card--left">
-      <div class="gate-logo"><span class="ms">waving_hand</span></div>
+      <div class="gate-icon"><span class="ms">waving_hand</span></div>
       <h1 class="gate-card__title">Antes de partir</h1>
       <p class="gate-card__sub">Dos datos y listo — lo demás lo conversas con tu coach.</p>
 
