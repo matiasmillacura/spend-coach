@@ -11,6 +11,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -203,6 +204,53 @@ class ReglaPresupuesto(Base):
     pct_deseos: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     pct_ahorro: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Tarjeta(Base):
+    """Tarjeta de crédito. El corte y el vencimiento importan: comprar justo después
+    del corte financia gratis por ~45 días."""
+    __tablename__ = "tarjetas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    institucion: Mapped[str] = mapped_column(String(80), nullable=False)
+    dia_corte: Mapped[int | None] = mapped_column(Integer)
+    dia_vencimiento: Mapped[int | None] = mapped_column(Integer)
+    cupo: Mapped[int | None] = mapped_column(Integer)
+    activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LineaDeuda(Base):
+    """Una deuda con su propia tasa. Una tarjeta puede tener varias a la vez
+    (rotativo, compras en cuotas, avance), y cada una cuesta distinto."""
+    __tablename__ = "lineas_deuda"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    tarjeta_id: Mapped[int | None] = mapped_column(ForeignKey("tarjetas.id", ondelete="CASCADE"), index=True)
+    modalidad: Mapped[str] = mapped_column(String(20), nullable=False, default="rotativo")
+    descripcion: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    saldo: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tasa_mensual: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cae: Mapped[float | None] = mapped_column(Float)
+    cuotas_totales: Mapped[int | None] = mapped_column(Integer)
+    cuotas_pagadas: Mapped[int | None] = mapped_column(Integer)
+    activa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PagoDeuda(Base):
+    """Abono a una línea de deuda."""
+    __tablename__ = "pagos_deuda"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    linea_id: Mapped[int] = mapped_column(ForeignKey("lineas_deuda.id", ondelete="CASCADE"), nullable=False, index=True)
+    monto: Mapped[int] = mapped_column(Integer, nullable=False)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False, default="abono")
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Mensaje(Base):
@@ -927,6 +975,139 @@ def set_regla(user_id: int, pct_necesidades: int, pct_deseos: int, pct_ahorro: i
             r.pct_necesidades, r.pct_deseos, r.pct_ahorro = n, d, a
             r.actualizado_en = datetime.utcnow()
         return {"pct_necesidades": n, "pct_deseos": d, "pct_ahorro": a}
+
+
+MODALIDADES_DEUDA = ["rotativo", "cuotas", "avance", "consumo", "hipotecario", "otra"]
+
+
+def crear_tarjeta(user_id: int, institucion: str, dia_corte=None, dia_vencimiento=None,
+                  cupo=None) -> dict:
+    with session_scope() as s:
+        t = Tarjeta(user_id=user_id, institucion=(institucion or "tarjeta").strip()[:80],
+                    dia_corte=_dia_valido(dia_corte), dia_vencimiento=_dia_valido(dia_vencimiento),
+                    cupo=int(cupo) if cupo else None)
+        s.add(t)
+        s.flush()
+        return _tarjeta_dict(t)
+
+
+def _dia_valido(d) -> int | None:
+    try:
+        n = int(d)
+    except (TypeError, ValueError):
+        return None
+    return n if 1 <= n <= 31 else None
+
+
+def buscar_tarjeta(user_id: int, institucion: str) -> dict | None:
+    patron = f"%{(institucion or '').strip().lower()}%"
+    with session_scope() as s:
+        t = s.scalar(select(Tarjeta).where(Tarjeta.user_id == user_id, Tarjeta.activa.is_(True),
+                                           func.lower(Tarjeta.institucion).like(patron)))
+        return _tarjeta_dict(t) if t else None
+
+
+def listar_tarjetas(user_id: int) -> list[dict]:
+    with session_scope() as s:
+        filas = s.scalars(select(Tarjeta).where(Tarjeta.user_id == user_id,
+                                                Tarjeta.activa.is_(True))).all()
+        return [_tarjeta_dict(t) for t in filas]
+
+
+def registrar_deuda(user_id: int, saldo: int, tasa_mensual: float, modalidad: str = "rotativo",
+                    descripcion: str = "", tarjeta_id: int | None = None, cae: float | None = None,
+                    cuotas_totales=None, cuotas_pagadas=None) -> dict:
+    """Crea o actualiza la línea de deuda de esa tarjeta y modalidad."""
+    saldo = int(saldo)
+    if saldo < 0:
+        raise ValueError("El saldo de la deuda no puede ser negativo.")
+    tasa_mensual = _tasa_valida(tasa_mensual)
+    modalidad = modalidad if modalidad in MODALIDADES_DEUDA else "otra"
+    with session_scope() as s:
+        q = select(LineaDeuda).where(LineaDeuda.user_id == user_id, LineaDeuda.activa.is_(True),
+                                     LineaDeuda.modalidad == modalidad)
+        q = q.where(LineaDeuda.tarjeta_id == tarjeta_id) if tarjeta_id else q.where(
+            LineaDeuda.tarjeta_id.is_(None))
+        linea = s.scalar(q)
+        if linea is None:
+            linea = LineaDeuda(user_id=user_id, tarjeta_id=tarjeta_id, modalidad=modalidad)
+            s.add(linea)
+        linea.saldo = saldo
+        linea.tasa_mensual = tasa_mensual
+        linea.descripcion = (descripcion or modalidad).strip()[:200]
+        if cae is not None:
+            linea.cae = _tasa_valida(cae, tope=5.0)
+        if cuotas_totales is not None:
+            linea.cuotas_totales = int(cuotas_totales)
+        if cuotas_pagadas is not None:
+            linea.cuotas_pagadas = int(cuotas_pagadas)
+        linea.actualizado_en = datetime.utcnow()
+        s.flush()
+        return _linea_dict(linea, s)
+
+
+def _tasa_valida(t, tope: float = 1.0) -> float:
+    """Acepta 2.86 (porcentaje) o 0.0286 (fracción) y devuelve siempre fracción mensual."""
+    v = float(t or 0)
+    if v > tope:
+        v = v / 100
+    if v < 0 or v > tope:
+        raise ValueError("La tasa no parece válida.")
+    return round(v, 6)
+
+
+def listar_deudas(user_id: int, solo_activas: bool = True) -> list[dict]:
+    with session_scope() as s:
+        q = select(LineaDeuda).where(LineaDeuda.user_id == user_id)
+        if solo_activas:
+            q = q.where(LineaDeuda.activa.is_(True))
+        return [_linea_dict(l, s) for l in s.scalars(q.order_by(LineaDeuda.tasa_mensual.desc())).all()]
+
+
+def total_deuda(user_id: int) -> int:
+    with session_scope() as s:
+        return int(s.scalar(select(func.coalesce(func.sum(LineaDeuda.saldo), 0)).where(
+            LineaDeuda.user_id == user_id, LineaDeuda.activa.is_(True))) or 0)
+
+
+def registrar_pago_deuda(user_id: int, linea_id: int, monto: int, fecha=None,
+                         tipo: str = "abono") -> dict:
+    """Abona a una deuda y descuenta el saldo. El interés del período se aplica aparte."""
+    monto = int(monto)
+    if monto <= 0:
+        raise ValueError("El pago debe ser mayor que 0.")
+    with session_scope() as s:
+        linea = s.scalar(select(LineaDeuda).where(LineaDeuda.id == linea_id,
+                                                  LineaDeuda.user_id == user_id))
+        if linea is None:
+            raise ValueError("No encontré esa deuda.")
+        p = PagoDeuda(user_id=user_id, linea_id=linea_id, monto=monto,
+                      fecha=_a_fecha(fecha) if fecha else date.today(), tipo=tipo)
+        s.add(p)
+        linea.saldo = max(0, linea.saldo - monto)
+        linea.actualizado_en = datetime.utcnow()
+        if linea.saldo == 0:
+            linea.activa = False
+        s.flush()
+        return {"pago_id": p.id, "saldo_restante": linea.saldo, "liquidada": not linea.activa}
+
+
+def _tarjeta_dict(t: Tarjeta) -> dict:
+    return {"id": t.id, "institucion": t.institucion, "dia_corte": t.dia_corte,
+            "dia_vencimiento": t.dia_vencimiento, "cupo": t.cupo}
+
+
+def _linea_dict(l: LineaDeuda, s: Session | None = None) -> dict:
+    institucion = None
+    if l.tarjeta_id and s is not None:
+        t = s.get(Tarjeta, l.tarjeta_id)
+        institucion = t.institucion if t else None
+    nombre = f"{institucion} {l.modalidad}".strip() if institucion else (l.descripcion or l.modalidad)
+    return {"id": l.id, "tarjeta_id": l.tarjeta_id, "institucion": institucion,
+            "modalidad": l.modalidad, "nombre": nombre, "descripcion": l.descripcion,
+            "saldo": l.saldo, "tasa_mensual": l.tasa_mensual, "cae": l.cae,
+            "cuotas_totales": l.cuotas_totales, "cuotas_pagadas": l.cuotas_pagadas,
+            "activa": l.activa}
 
 
 def set_presupuesto(user_id: int, categoria: str, monto: int) -> dict:

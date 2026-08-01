@@ -7,6 +7,7 @@ from datetime import date
 import anthropic
 
 import db
+import finanzas
 from config import config
 from extractor import ExtractorError, get_client
 
@@ -204,6 +205,90 @@ TOOLS = [
     },
 ]
 
+TOOLS += [
+    {
+        "name": "registrar_deuda",
+        "description": (
+            "Registra o actualiza una deuda. OJO: una tarjeta puede tener varias líneas a "
+            "la vez con tasas distintas (rotativo, cuotas, avance) — registra cada una por "
+            "separado. La tasa es MENSUAL (ej. 2.86). El CAE es anual y sirve para comparar, "
+            "no para calcular. Si el usuario no sabe la tasa, pídesela: está en el estado de "
+            "cuenta como 'interés vigente' o 'tasa rotativa'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "saldo": {"type": "integer", "description": "cuánto debe hoy en esta línea, CLP"},
+                "tasa_mensual": {"type": "number", "description": "tasa MENSUAL en % (ej. 2.86)"},
+                "modalidad": {"type": "string", "enum": db.MODALIDADES_DEUDA},
+                "institucion": {"type": "string", "description": "banco o casa comercial (ej. Falabella)"},
+                "cae": {"type": "number", "description": "CAE anual en %, si lo tiene"},
+                "descripcion": {"type": "string"},
+            },
+            "required": ["saldo", "tasa_mensual"],
+        },
+    },
+    {
+        "name": "registrar_pago_deuda",
+        "description": "Registra un abono a una deuda y descuenta el saldo. Usa el id de la deuda (viene en el RESUMEN).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "deuda_id": {"type": "integer"},
+                "monto": {"type": "integer"},
+                "fecha": {"type": "string", "description": "YYYY-MM-DD; si no se dice, hoy"},
+            },
+            "required": ["deuda_id", "monto"],
+        },
+    },
+    {
+        "name": "plan_de_deuda",
+        "description": (
+            "EL CÁLCULO PRINCIPAL para deudas: con la plata que sobra este mes, dice cuánto "
+            "pagar de mínimo en cada deuda, cuánto dejar de colchón y a cuál deuda abonar el "
+            "resto (siempre la de mayor tasa). Úsalo cuando pregunten cuánto abonar, cómo "
+            "repartir la plata o qué hacer con la deuda este mes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "excedente": {"type": "integer", "description": "plata disponible este mes; si se omite, se calcula de ingresos menos gastos"},
+                "colchon_objetivo": {"type": "integer", "description": "colchón de emergencia deseado; por defecto un mes de gastos"},
+            },
+        },
+    },
+    {
+        "name": "simular_deuda",
+        "description": (
+            "Compara escenarios de pago de UNA deuda: cuánto se demora y cuánto interés paga "
+            "según la cuota. Úsalo para mostrar lo caro que es el pago mínimo o el impacto de "
+            "un abono extra ('si abono 300.000, ¿cuándo salgo?')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "deuda_id": {"type": "integer"},
+                "cuotas": {"type": "array", "items": {"type": "integer"},
+                           "description": "cuotas mensuales a comparar, ej. [50000, 100000, 200000]"},
+            },
+            "required": ["deuda_id"],
+        },
+    },
+    {
+        "name": "evaluar_ahorro_vs_deuda",
+        "description": (
+            "¿Conviene ahorrar este monto o abonarlo a la deuda? Úsalo SIEMPRE que el usuario "
+            "quiera ahorrar o crear una meta teniendo deuda con interés. Devuelve los números "
+            "de ambos lados para poder advertir sin prohibir."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"monto": {"type": "integer"}},
+            "required": ["monto"],
+        },
+    },
+]
+
 TOOL_BUSQUEDA_SEMANTICA = {
     "name": "buscar_gastos_similares",
     "description": (
@@ -348,6 +433,67 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
         if nombre == "consultar_resumen":
             return {"ok": True, "resumen": _snapshot(user_id)}
 
+        if nombre == "registrar_deuda":
+            tarjeta_id = None
+            inst = (args.get("institucion") or "").strip()
+            if inst:
+                t = db.buscar_tarjeta(user_id, inst) or db.crear_tarjeta(user_id, inst)
+                tarjeta_id = t["id"]
+            linea = db.registrar_deuda(
+                user_id, args["saldo"], args["tasa_mensual"],
+                modalidad=args.get("modalidad", "rotativo"),
+                descripcion=args.get("descripcion", ""), tarjeta_id=tarjeta_id,
+                cae=args.get("cae"),
+            )
+            costo = finanzas.interes_del_mes(linea["saldo"], linea["tasa_mensual"])
+            return {"ok": True, "deuda": linea, "interes_este_mes": costo,
+                    "tasa_anual_pct": round(finanzas.tasa_anual(linea["tasa_mensual"]) * 100, 2)}
+
+        if nombre == "registrar_pago_deuda":
+            return {"ok": True, **db.registrar_pago_deuda(
+                user_id, args["deuda_id"], args["monto"], _hoy_iso(args.get("fecha")))}
+
+        if nombre == "plan_de_deuda":
+            deudas = db.listar_deudas(user_id)
+            if not deudas:
+                return {"sin_deudas": True,
+                        "mensaje": "No hay deudas registradas todavía."}
+            snap = _snapshot(user_id)
+            excedente = args.get("excedente")
+            if excedente is None:
+                excedente = max(0, snap["ingreso_mensual_total"] - snap["gasto_mes_total"])
+            colchon_objetivo = args.get("colchon_objetivo")
+            if colchon_objetivo is None:
+                hay_cara = any(d["tasa_mensual"] > finanzas.RENDIMIENTO_AHORRO_MENSUAL
+                               for d in deudas)
+                colchon_objetivo = finanzas.colchon_sugerido(snap["gasto_mes_total"] or 0, hay_cara)
+            plan = finanzas.plan_mensual(deudas, int(excedente),
+                                         colchon_actual=snap.get("ahorro_mes", 0),
+                                         colchon_objetivo=int(colchon_objetivo))
+            return {"ok": True, **plan}
+
+        if nombre == "simular_deuda":
+            deuda = next((d for d in db.listar_deudas(user_id)
+                          if d["id"] == args.get("deuda_id")), None)
+            if deuda is None:
+                return {"error": "No encontré esa deuda."}
+            cuotas = args.get("cuotas") or [
+                max(20000, round(deuda["saldo"] * 0.05)),
+                round(deuda["saldo"] * 0.1),
+                round(deuda["saldo"] * 0.25),
+            ]
+            return {"ok": True, "deuda": deuda["nombre"], "saldo": deuda["saldo"],
+                    "escenarios": finanzas.comparar_escenarios(
+                        deuda["saldo"], deuda["tasa_mensual"], [int(c) for c in cuotas])}
+
+        if nombre == "evaluar_ahorro_vs_deuda":
+            deudas = finanzas.orden_avalancha(db.listar_deudas(user_id))
+            tasa = deudas[0]["tasa_mensual"] if deudas else None
+            r = finanzas.conviene_ahorrar(int(args["monto"]), tasa)
+            if deudas:
+                r["deuda_mas_cara"] = deudas[0]["nombre"]
+            return {"ok": True, **r}
+
         if nombre == "buscar_gastos_similares":
             import rag_gastos
             return rag_gastos.buscar_resumido(user_id, args.get("consulta", ""))
@@ -363,7 +509,11 @@ def _snapshot(user_id: int, hoy: date | None = None) -> dict:
     ing_fijos = db.listar_ingresos_fijos(user_id)
     ingreso_total = db.ingreso_mensual_total(user_id, hoy.year, hoy.month)
     r = db.resumen_mes(user_id, hoy.year, hoy.month)
-    gasto_total = r["total"]
+    # Los gastos fijos cuentan aunque no se hayan registrado como movimiento: el
+    # dashboard los suma, y el coach debe ver el mismo número que el usuario en pantalla.
+    gasto_fijo = db.total_gasto_fijo(user_id)
+    gasto_variable = r["total"]
+    gasto_total = gasto_variable + gasto_fijo
     grupos = {"necesidades": 0, "deseos": 0}
     for cat, d in r["por_categoria"].items():
         grupos[db.GRUPO_CATEGORIA.get(cat, "deseos")] += d["total"]
@@ -381,10 +531,17 @@ def _snapshot(user_id: int, hoy: date | None = None) -> dict:
         "ingresos_fijos": ing_fijos,
         "ingreso_mensual_total": ingreso_total,
         "gasto_mes_total": gasto_total,
+        "gasto_variable_mes": gasto_variable,
+        "gasto_fijo_mensual": gasto_fijo,
         "gasto_por_grupo": grupos,
         "balance_mes": ingreso_total - gasto_total,
         "ahorro_mes": ahorro_mes,
         "metas": metas,
+        "deudas": [{"id": d["id"], "nombre": d["nombre"], "saldo": d["saldo"],
+                    "tasa_mensual_pct": round(d["tasa_mensual"] * 100, 2),
+                    "interes_este_mes": finanzas.interes_del_mes(d["saldo"], d["tasa_mensual"])}
+                   for d in db.listar_deudas(user_id)],
+        "deuda_total": db.total_deuda(user_id),
         "regla": db.get_regla(user_id),
         "gastos_fijos": db.listar_gastos_fijos(user_id),
         "presupuestos": db.listar_presupuestos(user_id),
@@ -434,6 +591,21 @@ ESTILO (lo más importante):
 - Meta con propósitos alternativos ("viaje o auto, lo que salga primero") = UNA sola
   meta con nombre combinado (ej. "viaje o auto"). No interrogues por cada variante.
 - Usa el nombre de la persona de vez en cuando (cercanía), no en cada mensaje.
+
+DEUDAS (regla dura): NUNCA calcules montos, intereses ni plazos de cabeza. Usa
+plan_de_deuda, simular_deuda o evaluar_ahorro_vs_deuda y explica lo que devuelvan.
+- Prioridad del excedente: primero los mínimos de todas las deudas (caer en mora es lo
+  más caro que existe), después el colchón de emergencia, después abono extra a la deuda
+  de MAYOR TASA, y al final las metas de ahorro.
+- Si quiere ahorrar o crear una meta teniendo deuda con interés, llama a
+  evaluar_ahorro_vs_deuda y muéstrale la comparación. Adviértele, pero si insiste,
+  respétalo: es su plata.
+- Nunca dejes el colchón en cero para abonar: sin colchón, el próximo imprevisto vuelve
+  a la tarjeta.
+- Una tarjeta puede tener varias deudas con tasas distintas (rotativo, cuotas, avance).
+  Pregunta por cada una solo cuando la necesites, no todas de una.
+- Pide la tasa cuando te haga falta para calcular; si no la sabe, dile dónde mirarla
+  (estado de cuenta: "interés vigente" o "tasa rotativa") y avanza con lo que haya.
 
 ONBOARDING: {estado_onb}
 El nombre y la fecha de nacimiento vienen de un formulario previo (normalmente ya están).

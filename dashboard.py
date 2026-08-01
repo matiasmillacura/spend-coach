@@ -5,6 +5,8 @@ import calendar
 import math
 from datetime import date
 
+from finanzas import interes_del_mes, tasa_anual
+
 from db import (
     GRUPO_CATEGORIA,
     gastos_del_mes,
@@ -12,6 +14,7 @@ from db import (
     get_perfil,
     get_regla,
     ingreso_mensual_total,
+    listar_deudas,
     listar_gastos_fijos,
     listar_metas,
     listar_presupuestos,
@@ -318,4 +321,26 @@ def construir(user_id: int, hoy: date | None = None,
         "mayor_gasto": mayor,
         "insights": _insights(buckets, prev_buckets) if total_prev > 0 else [],
         "finanzas": _finanzas(user_id, anio, mes, total, buckets, hoy, fijos),
+        "deudas": _deudas(user_id),
+    }
+
+
+def _deudas(user_id: int) -> dict:
+    """Deudas ordenadas por tasa (la más cara primero) con lo que cuesta cada una al mes."""
+    lineas = listar_deudas(user_id)
+    items = [{
+        "id": d["id"],
+        "nombre": d["nombre"],
+        "modalidad": d["modalidad"],
+        "saldo": d["saldo"],
+        "tasa_mensual_pct": round(d["tasa_mensual"] * 100, 2),
+        "tasa_anual_pct": round(tasa_anual(d["tasa_mensual"]) * 100, 1),
+        "cae_pct": round(d["cae"] * 100, 2) if d["cae"] else None,
+        "interes_mes": interes_del_mes(d["saldo"], d["tasa_mensual"]),
+    } for d in lineas]
+    return {
+        "items": items,
+        "total": sum(i["saldo"] for i in items),
+        "interes_mes": sum(i["interes_mes"] for i in items),
+        "mas_cara": items[0]["nombre"] if items else None,
     }

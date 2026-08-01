@@ -461,6 +461,7 @@ async function cargarDashboard() {
   mesVista = d.es_mes_actual ? null : d.mes;
   $("#mes-next").disabled = d.es_mes_actual;
   renderFinanzas(d.finanzas);
+  renderDeudas(d.deudas);
   renderKPIs(d);
   renderInsights(d.insights);
   renderDonut(d);
@@ -550,6 +551,32 @@ function renderPresupuestos(pptos) {
     requestAnimationFrame(() => { fill.style.width = Math.min(100, p.pct) + "%"; });
     bar.appendChild(fill);
     li.append(head, bar);
+    ul.appendChild(li);
+  }
+}
+
+function renderDeudas(d) {
+  const card = $("#deudas-card");
+  const ul = $("#deudas-list");
+  ul.innerHTML = "";
+  const items = (d && d.items) || [];
+  if (!items.length) { card.hidden = true; return; }
+  card.hidden = false;
+  $("#deudas-total").textContent = formatCLP(d.total);
+  $("#deudas-interes").textContent =
+    `Solo en intereses este mes: ${formatCLP(d.interes_mes)}. La más cara es ${d.mas_cara}.`;
+  for (const x of items) {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "var(--bad)";
+    const name = document.createElement("span");
+    name.className = "name name--plano";
+    name.textContent = `${x.nombre} · ${String(x.tasa_mensual_pct).replace(".", ",")}%`;
+    const val = document.createElement("span");
+    val.className = "val";
+    val.textContent = formatCLP(x.saldo);
+    li.append(dot, name, val);
     ul.appendChild(li);
   }
 }
