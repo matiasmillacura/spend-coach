@@ -5,7 +5,7 @@ import calendar
 import math
 from datetime import date
 
-from finanzas import interes_del_mes, tasa_anual
+from finanzas import alertas_tarjeta, interes_del_mes, tasa_anual
 
 from db import (
     GRUPO_CATEGORIA,
@@ -15,7 +15,9 @@ from db import (
     get_regla,
     ingreso_mensual_total,
     listar_deudas,
+    listar_eventos_futuros,
     listar_gastos_fijos,
+    listar_tarjetas,
     listar_metas,
     listar_presupuestos,
     mayor_gasto,
@@ -322,6 +324,21 @@ def construir(user_id: int, hoy: date | None = None,
         "insights": _insights(buckets, prev_buckets) if total_prev > 0 else [],
         "finanzas": _finanzas(user_id, anio, mes, total, buckets, hoy, fijos),
         "deudas": _deudas(user_id),
+        "agenda": _agenda(user_id, hoy),
+    }
+
+
+def _agenda(user_id: int, hoy: date) -> dict:
+    """Lo que se viene: gastos futuros conocidos y avisos de corte/vencimiento."""
+    eventos = listar_eventos_futuros(user_id, desde=hoy.isoformat())[:6]
+    avisos = []
+    for t in listar_tarjetas(user_id):
+        for a in alertas_tarjeta(t.get("dia_corte"), t.get("dia_vencimiento"), hoy):
+            avisos.append({**a, "tarjeta": t["institucion"]})
+    return {
+        "eventos": [{**e, "dias": (date.fromisoformat(e["fecha"]) - hoy).days} for e in eventos],
+        "total_eventos": sum(e["monto_estimado"] for e in eventos),
+        "alertas": avisos,
     }
 
 

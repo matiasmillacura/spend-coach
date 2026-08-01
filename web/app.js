@@ -461,6 +461,7 @@ async function cargarDashboard() {
   mesVista = d.es_mes_actual ? null : d.mes;
   $("#mes-next").disabled = d.es_mes_actual;
   renderFinanzas(d.finanzas);
+  renderAgenda(d.agenda);
   renderDeudas(d.deudas);
   renderKPIs(d);
   renderInsights(d.insights);
@@ -551,6 +552,43 @@ function renderPresupuestos(pptos) {
     requestAnimationFrame(() => { fill.style.width = Math.min(100, p.pct) + "%"; });
     bar.appendChild(fill);
     li.append(head, bar);
+    ul.appendChild(li);
+  }
+}
+
+function renderAgenda(a) {
+  const card = $("#agenda-card");
+  const ul = $("#agenda-list");
+  ul.innerHTML = "";
+  const eventos = (a && a.eventos) || [];
+  const alertas = (a && a.alertas) || [];
+  if (!eventos.length && !alertas.length) { card.hidden = true; return; }
+  card.hidden = false;
+  $("#agenda-total").textContent = formatCLP(a.total_eventos || 0);
+  for (const al of alertas) {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "#fbbf24";
+    const name = document.createElement("span");
+    name.className = "name name--plano";
+    name.textContent = `${al.tarjeta}: ${al.mensaje}`;
+    li.append(dot, name);
+    ul.appendChild(li);
+  }
+  for (const e of eventos) {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = "var(--accent)";
+    const name = document.createElement("span");
+    name.className = "name name--plano";
+    name.textContent = e.dias <= 0 ? `${e.descripcion} · hoy`
+      : `${e.descripcion} · en ${e.dias} ${e.dias === 1 ? "día" : "días"}`;
+    const val = document.createElement("span");
+    val.className = "val";
+    val.textContent = e.monto_estimado ? formatCLP(e.monto_estimado) : "—";
+    li.append(dot, name, val);
     ul.appendChild(li);
   }
 }
@@ -839,6 +877,16 @@ async function cargarCoach() {
 }
 
 // ---------- arranque ----------
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => {
+    if (document.fonts.check('24px "Material Symbols Rounded"')) {
+      document.documentElement.classList.add("iconos-ok");
+    }
+  }).catch(() => {});
+} else {
+  document.documentElement.classList.add("iconos-ok");
+}
+
 checkAuth();
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});

@@ -122,3 +122,67 @@ def test_sin_deuda_el_colchon_se_llena_completo():
                               colchon_objetivo=500_000)
     assert p["a_colchon"] == 200_000
     assert p["abono_extra"] is None
+
+
+def test_proximo_pago_salta_al_mes_siguiente_si_ya_paso():
+    from datetime import date
+    assert finanzas.proximo_pago(30, date(2026, 8, 1)) == date(2026, 8, 30)
+    assert finanzas.proximo_pago(1, date(2026, 8, 1)) == date(2026, 9, 1)
+    # febrero no tiene 30: cae en el último día del mes
+    assert finanzas.proximo_pago(30, date(2026, 2, 1)) == date(2026, 2, 28)
+    assert finanzas.proximo_pago(None, date(2026, 8, 1)) is None
+
+
+def test_flujo_descuenta_compromisos_y_colchon():
+    from datetime import date
+    hoy = date(2026, 8, 1)
+    compromisos = [
+        {"concepto": "arriendo", "monto": 300_000, "fecha": None},
+        {"concepto": "cumpleaños", "monto": 40_000, "fecha": "2026-08-05"},
+        {"concepto": "fuera de rango", "monto": 999_000, "fecha": "2026-12-01"},
+    ]
+    f = finanzas.flujo_hasta_proximo_ingreso(500_000, compromisos, hoy,
+                                             date(2026, 8, 30), colchon=100_000)
+    assert f["total_comprometido"] == 340_000   # el de diciembre no cuenta
+    assert f["disponible"] == 60_000
+    assert f["en_rojo"] is False
+
+
+def test_flujo_marca_rojo_cuando_no_alcanza():
+    from datetime import date
+    f = finanzas.flujo_hasta_proximo_ingreso(
+        100_000, [{"concepto": "arriendo", "monto": 300_000, "fecha": None}],
+        date(2026, 8, 1), date(2026, 8, 30), colchon=0)
+    assert f["en_rojo"] is True
+
+
+def test_puedo_gastar_sugiere_tope_y_avisa_cuando_apreta():
+    holgado = finanzas.puedo_gastar(30_000, disponible=200_000)
+    assert holgado["puede"] is True and holgado["tope_recomendado"] == 100_000
+    justo = finanzas.puedo_gastar(150_000, disponible=200_000)
+    assert justo["puede"] is True and justo.get("ajustado") is True
+    excede = finanzas.puedo_gastar(300_000, disponible=200_000)
+    assert excede["puede"] is False and excede["excede_por"] == 100_000
+    sin_plata = finanzas.puedo_gastar(10_000, disponible=-5_000)
+    assert sin_plata["puede"] is False
+
+
+def test_perfil_cambia_el_colchon():
+    conservador = finanzas.colchon_sugerido(500_000, False, "conservador")
+    gustito = finanzas.colchon_sugerido(500_000, False, "gustito")
+    assert conservador > gustito
+    assert finanzas.colchon_sugerido(500_000, False, "no-existe") == 500_000
+
+
+def test_alertas_de_corte_y_vencimiento():
+    from datetime import date
+    hoy = date(2026, 8, 1)
+    avisos = finanzas.alertas_tarjeta(dia_corte=4, dia_vencimiento=20, hoy=hoy)
+    assert [a["tipo"] for a in avisos] == ["corte"]
+    assert avisos[0]["dias"] == 3
+    assert finanzas.alertas_tarjeta(None, None, hoy) == []
+
+
+def test_formato_de_pesos():
+    assert finanzas.clp(1_234_567) == "$1.234.567"
+    assert finanzas.clp(0) == "$0"

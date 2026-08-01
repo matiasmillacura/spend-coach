@@ -59,4 +59,15 @@ def test_resumen_incluye_total(store_falso):
 
     r = rag_gastos.buscar_resumido(u, "auto", k=3)
     assert r["encontrados"] >= 1
-    assert r["total"] == sum(g["monto"] for g in r["gastos"])
+    assert r["total_gastado"] == sum(
+        g["monto"] for g in r["resultados"] if g["tipo"] == "gasto")
+
+
+def test_indexa_metas_y_eventos_como_contexto(store_falso):
+    u = _usuario("rag-f@test.cl", "7000005-9")
+    db.crear_meta(u, "viaje al sur", tipo="monto_fecha", monto_objetivo=1_500_000)
+    db.crear_evento_futuro(u, "cumpleaños de mi papá", "2026-09-10", 40_000)
+
+    tipos = {r["tipo"] for r in rag_gastos.buscar(u, "regalo viaje familia", k=10)}
+    assert "meta" in tipos
+    assert "evento" in tipos

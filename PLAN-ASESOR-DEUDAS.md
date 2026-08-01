@@ -135,15 +135,20 @@ para nada.
 6. **Mes atípico** — "este mes tienes permiso de circulación y un cumpleaños; te propongo
    abonar el mínimo + $30.000 en vez de tu abono habitual, y retomar en agosto".
 
-## 7. Orden sugerido
+## 7. Estado
 
-- **Fase 1 — Motor + deudas básicas**: modelo `deuda`, cálculo de interés y amortización,
-  simulador de escenarios, herramienta `plan_de_deuda`. Sin esto nada más tiene sentido.
-- **Fase 2 — Flujo de caja por fecha**: compromisos, eventos futuros, `disponible_real`,
-  herramienta `puedo_gastar`.
-- **Fase 3 — Perfil y ahorro previo**: colchón objetivo, perfil de riesgo, ahorro
-  preexistente, la regla ahorro-vs-deuda completa.
-- **Fase 4 — Repactación y alertas**: comparador de repactación, avisos de corte y
-  vencimiento.
-- **Fase 5 — Contexto conversacional (RAG)**: el asesor recuerda por qué existía cada
-  meta y qué dijo el usuario sobre sus prioridades.
+- ✅ **Fase 1 — Motor + deudas**: `finanzas.py`, tablas `tarjetas` / `lineas_deuda` /
+  `pagos_deuda`, herramientas `registrar_deuda`, `plan_de_deuda`, `simular_deuda`,
+  `evaluar_ahorro_vs_deuda`, `registrar_pago_deuda`.
+- ✅ **Fase 2 — Flujo de caja por fecha**: `dia_pago` del sueldo, tabla `eventos_futuros`,
+  `flujo_hasta_proximo_ingreso`, herramientas `puedo_gastar` y `registrar_evento_futuro`.
+- ✅ **Fase 3 — Perfil y ahorro previo**: `perfil_riesgo` (conservador / equilibrado /
+  gustito) y `ahorro_previo` en el usuario; el colchón objetivo sale del perfil.
+- ✅ **Fase 4 — Repactación y alertas**: `evaluar_repactacion` y avisos de corte y
+  vencimiento en el resumen y en el dashboard.
+- ✅ **Fase 5 — Contexto conversacional**: el índice semántico incluye metas y eventos
+  futuros, no solo gastos, para que el asesor recuerde para qué era cada cosa.
+
+Pendientes conocidos: los gastos fijos se descuentan completos del flujo aunque ya se
+hayan pagado en el mes (conservador a propósito); el pago mínimo se estima en 5% del
+saldo mientras el usuario no informe el real de su estado de cuenta.

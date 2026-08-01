@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  /* Mismos tokens que web/styles.css */
+  :root {
+    --bg: #0a0e18;
+    --surface: #141a2b;
+    --surface-3: #283150;
+    --line: rgba(255, 255, 255, .06);
+    --text: #eef2fa;
+    --muted: #8d97b0;
+    --good: #34d399;
+    --bad: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+  body::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(130% 50% at 50% 0%, #111931 0%, var(--bg) 58%);
+  }
+  .wrap {
+    position: relative; height: 100%;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 80px;
+  }
+
+  /* ---------- Columna izquierda ---------- */
+  .left { width: 620px; }
+  .logo { width: 100px; height: 100px; border-radius: 24px; display: block; }
+  h1 {
+    font-size: 74px; font-weight: 800; letter-spacing: -2.5px;
+    line-height: 1; margin: 48px 0 0;
+  }
+  .tagline {
+    font-size: 25px; font-weight: 700; color: #c7d2fe;
+    letter-spacing: -.4px; margin-top: 22px;
+  }
+  .blurb {
+    font-size: 19px; line-height: 1.45; color: var(--muted);
+    max-width: 545px; margin-top: 18px;
+  }
+  .chips { display: flex; gap: 14px; margin-top: 30px; }
+  .chip {
+    font-size: 15px; font-weight: 600; color: #dbe2f4;
+    padding: 11px 20px; border-radius: 999px;
+    background: #151d33; border: 1px solid #2c3760;
+  }
+
+  /* ---------- Tarjeta de balance ---------- */
+  .card {
+    width: 344px; padding: 26px 28px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .label { font-size: 15px; color: var(--muted); }
+  .amount { font-size: 27px; font-weight: 700; letter-spacing: -.6px; }
+  .amount--in { color: var(--good); }
+  .amount--out { color: var(--bad); }
+  .bar {
+    height: 9px; border-radius: 999px; background: var(--surface-3);
+    margin: 15px 0 22px; overflow: hidden;
+  }
+  .bar > i { display: block; width: 67%; height: 100%; background: var(--good); border-radius: 999px; }
+  .balance { font-size: 45px; font-weight: 800; color: var(--good); letter-spacing: -1.5px; margin-top: 6px; }
+  .pill {
+    display: inline-block; margin-top: 20px;
+    font-size: 15px; font-weight: 700; color: var(--good);
+    background: rgba(52, 211, 153, .14); border: 1px solid rgba(52, 211, 153, .28);
+    padding: 9px 16px; border-radius: 999px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+      <defs>
+        <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#6366f1"/>
+          <stop offset=".55" stop-color="#8b5cf6"/>
+          <stop offset="1" stop-color="#a855f7"/>
+        </linearGradient>
+      </defs>
+      <rect width="512" height="512" rx="116" fill="url(#fondo)"/>
+      <g transform="translate(7,-14)">
+        <g fill="#fff">
+          <rect x="262" y="266" width="56" height="118" rx="26" opacity=".78"/>
+          <rect x="336" y="188" width="56" height="196" rx="26"/>
+        </g>
+        <circle cx="170" cy="296" r="64" fill="#fff"/>
+        <g fill="none" stroke="#7c3aed" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M170 246v100"/>
+          <path d="M192 275c0-11-10-17-22-17s-22 6-22 15 10 14 22 16 22 7 22 16-10 16-22 16-22-6-22-17"/>
+        </g>
+      </g>
+    </svg>
+
+    <h1>Spend Coach</h1>
+    <p class="tagline">Conversational personal finance app</p>
+    <p class="blurb">
+      Log what you spend by chatting, by sending a photo of the receipt, or with
+      your voice. Your balance, budgets and savings goals, always up to date.
+    </p>
+    <div class="chips">
+      <span class="chip">AI chat</span>
+      <span class="chip">Receipt photo</span>
+      <span class="chip">Savings goals</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="label">Income</span>
+      <span class="label">Expenses</span>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <span class="amount amount--in">$1,430,000</span>
+      <span class="amount amount--out">$1,188,338</span>
+    </div>
+    <div class="bar"><i></i></div>
+    <span class="label">Monthly balance &middot; CLP</span>
+    <div class="balance">$241,662</div>
+    <span class="pill">17% saved</span>
+  </div>
+</div>
+</body>
+</html>

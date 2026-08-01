@@ -289,6 +289,89 @@ TOOLS += [
     },
 ]
 
+TOOLS += [
+    {
+        "name": "puedo_gastar",
+        "description": (
+            "Responde '¿puedo gastar X?' o '¿cuánto puedo gastar en esto?' mirando el flujo "
+            "REAL hasta el próximo sueldo: descuenta cuotas, cuentas y eventos ya conocidos, "
+            "y reserva el colchón. Úsalo para regalos, salidas, compras puntuales. Si no "
+            "sabes cuándo le pagan, pregúntalo una vez y guárdalo con registrar_dia_pago."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "monto": {"type": "integer", "description": "monto que quiere gastar; omítelo para preguntar cuánto puede"},
+                "concepto": {"type": "string", "description": "en qué lo gastaría (ej. regalo del papá)"},
+            },
+        },
+    },
+    {
+        "name": "registrar_evento_futuro",
+        "description": (
+            "Guarda un gasto que se viene y todavía no ocurre: cumpleaños, viaje, permiso de "
+            "circulación, matrícula. Con fecha y monto estimado entra al flujo y cambia lo "
+            "que se puede gastar hoy. Regístralo apenas lo mencionen."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "descripcion": {"type": "string"},
+                "fecha": {"type": "string", "description": "YYYY-MM-DD"},
+                "monto_estimado": {"type": "integer"},
+                "prioridad": {"type": "string", "enum": ["alta", "media", "baja"]},
+                "flexible": {"type": "boolean", "description": "false si el monto no se puede ajustar"},
+            },
+            "required": ["descripcion", "fecha"],
+        },
+    },
+    {
+        "name": "registrar_dia_pago",
+        "description": "Guarda qué día del mes le pagan el sueldo. Sin esto no se puede proyectar el flujo por fecha.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dia": {"type": "integer", "description": "día del mes, 1 a 31"},
+                "ingreso_id": {"type": "integer", "description": "id del ingreso fijo; si se omite, el primero"},
+            },
+            "required": ["dia"],
+        },
+    },
+    {
+        "name": "configurar_perfil_financiero",
+        "description": (
+            "Guarda el estilo de asesoría y el ahorro que ya traía antes de la app. "
+            "conservador = guarda más y arriesga menos; equilibrado = por defecto; "
+            "gustito = deja más espacio para disfrutar. Cambia el colchón que se recomienda."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "perfil_riesgo": {"type": "string", "enum": db.PERFILES_RIESGO},
+                "ahorro_previo": {"type": "integer", "description": "ahorro acumulado que ya tenía, CLP"},
+            },
+        },
+    },
+    {
+        "name": "evaluar_repactacion",
+        "description": (
+            "Compara repactar una deuda contra seguir como está. Devuelve el alivio mensual "
+            "Y el costo total, porque repactar casi siempre baja la cuota y sube lo que se "
+            "paga al final. Pide la cuota nueva y en cuántos meses se la ofrecen."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "deuda_id": {"type": "integer"},
+                "cuota_actual": {"type": "integer"},
+                "cuota_nueva": {"type": "integer"},
+                "meses_nuevos": {"type": "integer"},
+            },
+            "required": ["deuda_id", "cuota_nueva", "meses_nuevos"],
+        },
+    },
+]
+
 TOOL_BUSQUEDA_SEMANTICA = {
     "name": "buscar_gastos_similares",
     "description": (
@@ -494,6 +577,41 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
                 r["deuda_mas_cara"] = deudas[0]["nombre"]
             return {"ok": True, **r}
 
+        if nombre == "puedo_gastar":
+            return _puedo_gastar(user_id, args.get("monto"), args.get("concepto"))
+
+        if nombre == "registrar_evento_futuro":
+            e = db.crear_evento_futuro(
+                user_id, args["descripcion"], _hoy_futuro(args["fecha"]),
+                monto_estimado=args.get("monto_estimado", 0),
+                prioridad=args.get("prioridad", "media"),
+                flexible=args.get("flexible", True))
+            return {"ok": True, "evento": e}
+
+        if nombre == "registrar_dia_pago":
+            ingresos = db.listar_ingresos_fijos(user_id)
+            if not ingresos:
+                return {"error": "Primero hay que registrar el ingreso fijo (el sueldo)."}
+            iid = args.get("ingreso_id") or ingresos[0]["id"]
+            ok = db.set_dia_pago(user_id, iid, args["dia"])
+            return {"ok": ok} if ok else {"error": "No encontré ese ingreso."}
+
+        if nombre == "configurar_perfil_financiero":
+            return {"ok": True, **db.set_perfil_financiero(
+                user_id, perfil_riesgo=args.get("perfil_riesgo"),
+                ahorro_previo=args.get("ahorro_previo"))}
+
+        if nombre == "evaluar_repactacion":
+            deuda = next((d for d in db.listar_deudas(user_id)
+                          if d["id"] == args.get("deuda_id")), None)
+            if deuda is None:
+                return {"error": "No encontré esa deuda."}
+            cuota_actual = args.get("cuota_actual") or finanzas.pago_minimo_sugerido(deuda["saldo"])
+            return {"ok": True, "deuda": deuda["nombre"],
+                    **finanzas.evaluar_repactacion(
+                        deuda["saldo"], deuda["tasa_mensual"], int(cuota_actual),
+                        int(args["cuota_nueva"]), int(args["meses_nuevos"]))}
+
         if nombre == "buscar_gastos_similares":
             import rag_gastos
             return rag_gastos.buscar_resumido(user_id, args.get("consulta", ""))
@@ -501,6 +619,64 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
         return {"error": f"herramienta desconocida: {nombre}"}
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
+
+
+def _alertas(user_id: int, hoy: date) -> list[dict]:
+    """Cortes y vencimientos que se vienen, para que el coach pueda avisar solo."""
+    avisos = []
+    for t in db.listar_tarjetas(user_id):
+        for a in finanzas.alertas_tarjeta(t.get("dia_corte"), t.get("dia_vencimiento"), hoy):
+            avisos.append({**a, "tarjeta": t["institucion"]})
+    return avisos
+
+
+def _hoy_futuro(fecha) -> str:
+    """Como _hoy_iso pero para fechas que SÍ pueden ser futuras (eventos por venir)."""
+    if isinstance(fecha, str) and fecha.strip():
+        try:
+            return date.fromisoformat(fecha.strip()).isoformat()
+        except ValueError:
+            pass
+    return date.today().isoformat()
+
+
+def _compromisos_pendientes(user_id: int, hoy: date, hasta: date) -> list[dict]:
+    """Lo que ya está comprometido entre hoy y una fecha: gastos fijos, mínimos de las
+    deudas y eventos futuros conocidos."""
+    compromisos = []
+    for f in db.listar_gastos_fijos(user_id):
+        compromisos.append({"concepto": f["descripcion"], "monto": f["monto"],
+                            "fecha": None, "tipo": "gasto fijo"})
+    for d in db.listar_deudas(user_id):
+        compromisos.append({"concepto": f"mínimo {d['nombre']}",
+                            "monto": finanzas.pago_minimo_sugerido(d["saldo"]),
+                            "fecha": None, "tipo": "deuda"})
+    for e in db.listar_eventos_futuros(user_id, desde=hoy.isoformat(), hasta=hasta.isoformat()):
+        compromisos.append({"concepto": e["descripcion"], "monto": e["monto_estimado"],
+                            "fecha": e["fecha"], "tipo": "evento"})
+    return compromisos
+
+
+def _puedo_gastar(user_id: int, monto=None, concepto=None) -> dict:
+    hoy = date.today()
+    snap = _snapshot(user_id, hoy)
+    ingresos = db.listar_ingresos_fijos(user_id)
+    dia_pago = next((i.get("dia_pago") for i in ingresos if i.get("dia_pago")), None)
+    fecha_ingreso = finanzas.proximo_pago(dia_pago, hoy)
+
+    saldo = snap["perfil"].get("saldo_inicial")
+    if saldo is None:
+        saldo = max(0, snap["ingreso_mensual_total"] - snap["gasto_variable_mes"])
+    deudas = db.listar_deudas(user_id)
+    hay_cara = any(d["tasa_mensual"] > finanzas.RENDIMIENTO_AHORRO_MENSUAL for d in deudas)
+    colchon = finanzas.colchon_sugerido(snap["gasto_mes_total"] or 0, hay_cara,
+                                        snap["perfil"].get("perfil_riesgo"))
+    limite = fecha_ingreso or hoy
+    flujo = finanzas.flujo_hasta_proximo_ingreso(
+        int(saldo), _compromisos_pendientes(user_id, hoy, limite), hoy, fecha_ingreso, colchon)
+    veredicto = finanzas.puedo_gastar(monto, flujo["disponible"], snap.get("metas"))
+    return {"ok": True, "concepto": concepto, "flujo": flujo, **veredicto,
+            "sin_dia_pago": dia_pago is None}
 
 
 def _snapshot(user_id: int, hoy: date | None = None) -> dict:
@@ -542,6 +718,8 @@ def _snapshot(user_id: int, hoy: date | None = None) -> dict:
                     "interes_este_mes": finanzas.interes_del_mes(d["saldo"], d["tasa_mensual"])}
                    for d in db.listar_deudas(user_id)],
         "deuda_total": db.total_deuda(user_id),
+        "eventos_futuros": db.listar_eventos_futuros(user_id, desde=hoy.isoformat()),
+        "alertas": _alertas(user_id, hoy),
         "regla": db.get_regla(user_id),
         "gastos_fijos": db.listar_gastos_fijos(user_id),
         "presupuestos": db.listar_presupuestos(user_id),
@@ -606,6 +784,18 @@ plan_de_deuda, simular_deuda o evaluar_ahorro_vs_deuda y explica lo que devuelva
   Pregunta por cada una solo cuando la necesites, no todas de una.
 - Pide la tasa cuando te haga falta para calcular; si no la sabe, dile dónde mirarla
   (estado de cuenta: "interés vigente" o "tasa rotativa") y avanza con lo que haya.
+
+GASTOS PUNTUALES ("¿puedo gastar X?", "¿cuánto le regalo a…?"): usa puedo_gastar, que
+mira el flujo real hasta el próximo sueldo. Da un monto concreto y di qué se aprieta si
+lo supera. Si menciona un gasto que se viene (cumpleaños, viaje, permiso de circulación),
+regístralo con registrar_evento_futuro apenas lo diga, aunque no pregunte nada.
+
+ALERTAS: si el RESUMEN trae avisos de corte o vencimiento, menciónalos cuando venga al
+caso, sin repetirlos en cada mensaje.
+
+PERFIL: si el usuario dice que prefiere ir a lo seguro o que quiere darse gustos, guarda
+eso con configurar_perfil_financiero. Si menciona ahorros que ya tenía antes de la app,
+guárdalos ahí también (ahorro_previo), no como un ahorro del mes.
 
 ONBOARDING: {estado_onb}
 El nombre y la fecha de nacimiento vienen de un formulario previo (normalmente ya están).

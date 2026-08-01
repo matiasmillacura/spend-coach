@@ -93,6 +93,9 @@ class User(Base):
     ultima_semana_resumen: Mapped[str | None] = mapped_column(String(10))
     saldo_inicial: Mapped[int | None] = mapped_column(Integer)
     saldo_inicial_fecha: Mapped[date | None] = mapped_column(Date)
+    # Perfil de asesoría: conservador / equilibrado / gustito. Modula el colchón.
+    perfil_riesgo: Mapped[str | None] = mapped_column(String(20))
+    ahorro_previo: Mapped[int | None] = mapped_column(Integer)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     gastos: Mapped[list["Gasto"]] = relationship(back_populates="user")
@@ -126,6 +129,7 @@ class IngresoFijo(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     descripcion: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     monto: Mapped[int] = mapped_column(Integer, nullable=False)
+    dia_pago: Mapped[int | None] = mapped_column(Integer)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -204,6 +208,22 @@ class ReglaPresupuesto(Base):
     pct_deseos: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     pct_ahorro: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EventoFuturo(Base):
+    """Gasto conocido que todavía no ocurre (cumpleaños, permiso de circulación, viaje).
+    Entra al flujo proyectado y por eso cambia cuánta plata hay disponible hoy."""
+    __tablename__ = "eventos_futuros"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    descripcion: Mapped[str] = mapped_column(String(200), nullable=False)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    monto_estimado: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    prioridad: Mapped[str] = mapped_column(String(10), nullable=False, default="media")
+    flexible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    cumplido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Tarjeta(Base):
@@ -302,7 +322,14 @@ def init_db() -> None:
             "password_hash": "VARCHAR(256)",
             "rut": "VARCHAR(12)",
             "nombre_completo": "VARCHAR(200)",
+            "perfil_riesgo": "VARCHAR(20)",
+            "ahorro_previo": "INTEGER",
         }
+        if insp.has_table("ingresos_fijos"):
+            cols_if = [c["name"] for c in insp.get_columns("ingresos_fijos")]
+            if "dia_pago" not in cols_if:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE ingresos_fijos ADD COLUMN dia_pago INTEGER"))
         with engine.begin() as conn:
             for col, tipo in faltantes.items():
                 if col not in cols:
@@ -576,6 +603,8 @@ def _perfil_dict(u: User) -> dict:
         "nombre_completo": u.nombre_completo,
         "rut": u.rut,
         "metodo_login": "google" if u.google_sub else ("password" if u.password_hash else "demo"),
+        "perfil_riesgo": u.perfil_riesgo,
+        "ahorro_previo": u.ahorro_previo,
     }
 
 
@@ -596,7 +625,8 @@ def listar_ingresos_fijos(user_id: int, solo_activos: bool = True) -> list[dict]
         if solo_activos:
             q = q.where(IngresoFijo.activo.is_(True))
         filas = s.scalars(q.order_by(IngresoFijo.monto.desc())).all()
-        return [{"id": i.id, "descripcion": i.descripcion, "monto": i.monto, "activo": i.activo} for i in filas]
+        return [{"id": i.id, "descripcion": i.descripcion, "monto": i.monto,
+                 "dia_pago": i.dia_pago, "activo": i.activo} for i in filas]
 
 
 def borrar_ingreso_fijo(user_id: int, ingreso_id: int) -> bool:
@@ -975,6 +1005,77 @@ def set_regla(user_id: int, pct_necesidades: int, pct_deseos: int, pct_ahorro: i
             r.pct_necesidades, r.pct_deseos, r.pct_ahorro = n, d, a
             r.actualizado_en = datetime.utcnow()
         return {"pct_necesidades": n, "pct_deseos": d, "pct_ahorro": a}
+
+
+PERFILES_RIESGO = ["conservador", "equilibrado", "gustito"]
+
+
+def set_perfil_financiero(user_id: int, perfil_riesgo: str | None = None,
+                          ahorro_previo: int | None = None) -> dict:
+    """Perfil de asesoría y ahorro que el usuario ya traía antes de la app."""
+    with session_scope() as s:
+        u = s.get(User, user_id)
+        if u is None:
+            raise ValueError("Usuario no encontrado.")
+        if perfil_riesgo:
+            p = perfil_riesgo.strip().lower()
+            if p not in PERFILES_RIESGO:
+                raise ValueError(f"Perfil no válido: {', '.join(PERFILES_RIESGO)}.")
+            u.perfil_riesgo = p
+        if ahorro_previo is not None:
+            if int(ahorro_previo) < 0:
+                raise ValueError("El ahorro no puede ser negativo.")
+            u.ahorro_previo = int(ahorro_previo)
+        return {"perfil_riesgo": u.perfil_riesgo, "ahorro_previo": u.ahorro_previo}
+
+
+def set_dia_pago(user_id: int, ingreso_id: int, dia_pago: int) -> bool:
+    with session_scope() as s:
+        i = s.scalar(select(IngresoFijo).where(IngresoFijo.id == ingreso_id,
+                                               IngresoFijo.user_id == user_id))
+        if i is None:
+            return False
+        i.dia_pago = _dia_valido(dia_pago)
+        return True
+
+
+def crear_evento_futuro(user_id: int, descripcion: str, fecha, monto_estimado: int = 0,
+                        prioridad: str = "media", flexible: bool = True) -> dict:
+    with session_scope() as s:
+        e = EventoFuturo(user_id=user_id, descripcion=(descripcion or "gasto").strip()[:200],
+                         fecha=_a_fecha(fecha), monto_estimado=max(0, int(monto_estimado or 0)),
+                         prioridad=prioridad if prioridad in ("alta", "media", "baja") else "media",
+                         flexible=bool(flexible))
+        s.add(e)
+        s.flush()
+        return _evento_dict(e)
+
+
+def listar_eventos_futuros(user_id: int, desde=None, hasta=None) -> list[dict]:
+    with session_scope() as s:
+        q = select(EventoFuturo).where(EventoFuturo.user_id == user_id,
+                                       EventoFuturo.cumplido.is_(False))
+        if desde:
+            q = q.where(EventoFuturo.fecha >= _a_fecha(desde))
+        if hasta:
+            q = q.where(EventoFuturo.fecha <= _a_fecha(hasta))
+        return [_evento_dict(e) for e in s.scalars(q.order_by(EventoFuturo.fecha)).all()]
+
+
+def marcar_evento_cumplido(user_id: int, evento_id: int) -> bool:
+    with session_scope() as s:
+        e = s.scalar(select(EventoFuturo).where(EventoFuturo.id == evento_id,
+                                                EventoFuturo.user_id == user_id))
+        if e is None:
+            return False
+        e.cumplido = True
+        return True
+
+
+def _evento_dict(e: EventoFuturo) -> dict:
+    return {"id": e.id, "descripcion": e.descripcion, "fecha": e.fecha.isoformat(),
+            "monto_estimado": e.monto_estimado, "prioridad": e.prioridad,
+            "flexible": e.flexible}
 
 
 MODALIDADES_DEUDA = ["rotativo", "cuotas", "avance", "consumo", "hipotecario", "otra"]
