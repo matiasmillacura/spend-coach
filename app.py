@@ -203,6 +203,53 @@ def create_app() -> Flask:
         ok = db.borrar_gasto(current_user_id(), gasto_id)
         return jsonify({"ok": ok}), (200 if ok else 404)
 
+    @app.patch("/api/gasto/<int:gasto_id>")
+    @login_required
+    def api_editar_gasto(gasto_id: int):
+        """Corregir la descripción, la categoría o el monto de un gasto mal anotado."""
+        d = request.get_json(silent=True) or {}
+        campos = {}
+        if "descripcion" in d:
+            campos["descripcion"] = str(d["descripcion"]).strip()[:200]
+        if "categoria" in d:
+            if d["categoria"] not in db.CATEGORIAS:
+                return jsonify({"ok": False, "error": "Categoría no válida."}), 400
+            campos["categoria"] = d["categoria"]
+        if "monto" in d:
+            try:
+                campos["monto"] = int(d["monto"])
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "Monto no válido."}), 400
+            if campos["monto"] <= 0:
+                return jsonify({"ok": False, "error": "El monto debe ser mayor que 0."}), 400
+        if not campos:
+            return jsonify({"ok": False, "error": "Nada que cambiar."}), 400
+        ok = db.editar_gasto(current_user_id(), gasto_id, **campos)
+        return jsonify({"ok": ok}), (200 if ok else 404)
+
+    @app.get("/api/gastos/<categoria>")
+    @login_required
+    def api_gastos_categoria(categoria: str):
+        """Desglose de una categoría en el mes: en qué se fue exactamente la plata."""
+        if categoria not in db.CATEGORIAS:
+            return jsonify({"ok": False, "error": "Categoría no válida."}), 400
+        hoy = date.today()
+        mes_raw = (request.args.get("mes") or "").strip()
+        anio, mes = hoy.year, hoy.month
+        if mes_raw:
+            try:
+                anio, mes = int(mes_raw[:4]), int(mes_raw[5:7])
+                assert mes_raw[4] == "-" and 1 <= mes <= 12 and 2000 <= anio <= 2100
+            except (ValueError, AssertionError, IndexError):
+                return jsonify({"ok": False, "error": "Parámetro mes inválido (YYYY-MM)."}), 400
+        gastos = db.gastos_por_categoria_detalle(current_user_id(), categoria, anio, mes)
+        fijos = [f for f in db.listar_gastos_fijos(current_user_id())
+                 if f["categoria"] == categoria]
+        return jsonify({"ok": True, "categoria": categoria, "gastos": gastos,
+                        "fijos": fijos,
+                        "total": sum(g["monto"] for g in gastos) + sum(f["monto"] for f in fijos),
+                        "categorias": db.CATEGORIAS})
+
     @app.get("/api/coaching")
     @login_required
     def api_coaching():

@@ -223,6 +223,8 @@ TOOLS += [
                 "modalidad": {"type": "string", "enum": db.MODALIDADES_DEUDA},
                 "institucion": {"type": "string", "description": "banco o casa comercial (ej. Falabella)"},
                 "cae": {"type": "number", "description": "CAE anual en %, si lo tiene"},
+                "total_facturado": {"type": "integer", "description": "total facturado del período, CLP"},
+                "pago_minimo": {"type": "integer", "description": "pago mínimo exigido este mes, CLP"},
                 "descripcion": {"type": "string"},
             },
             "required": ["saldo", "tasa_mensual"],
@@ -526,7 +528,8 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
                 user_id, args["saldo"], args["tasa_mensual"],
                 modalidad=args.get("modalidad", "rotativo"),
                 descripcion=args.get("descripcion", ""), tarjeta_id=tarjeta_id,
-                cae=args.get("cae"),
+                cae=args.get("cae"), total_facturado=args.get("total_facturado"),
+                pago_minimo=args.get("pago_minimo"),
             )
             costo = finanzas.interes_del_mes(linea["saldo"], linea["tasa_mensual"])
             return {"ok": True, "deuda": linea, "interes_este_mes": costo,
@@ -550,6 +553,9 @@ def _ejecutar_tool(user_id: int, nombre: str, args: dict) -> dict:
                 hay_cara = any(d["tasa_mensual"] > finanzas.RENDIMIENTO_AHORRO_MENSUAL
                                for d in deudas)
                 colchon_objetivo = finanzas.colchon_sugerido(snap["gasto_mes_total"] or 0, hay_cara)
+            for d in deudas:
+                if d.get("pago_minimo"):
+                    d["minimo_real"] = d["pago_minimo"]
             plan = finanzas.plan_mensual(deudas, int(excedente),
                                          colchon_actual=snap.get("ahorro_mes", 0),
                                          colchon_objetivo=int(colchon_objetivo))
@@ -715,6 +721,8 @@ def _snapshot(user_id: int, hoy: date | None = None) -> dict:
         "metas": metas,
         "deudas": [{"id": d["id"], "nombre": d["nombre"], "saldo": d["saldo"],
                     "tasa_mensual_pct": round(d["tasa_mensual"] * 100, 2),
+                    "total_facturado": d["total_facturado"], "pago_minimo": d["pago_minimo"],
+                    "pagado": d["pagado"], "pct_pagado": d["pct_pagado"],
                     "interes_este_mes": finanzas.interes_del_mes(d["saldo"], d["tasa_mensual"])}
                    for d in db.listar_deudas(user_id)],
         "deuda_total": db.total_deuda(user_id),
@@ -784,6 +792,16 @@ plan_de_deuda, simular_deuda o evaluar_ahorro_vs_deuda y explica lo que devuelva
   Pregunta por cada una solo cuando la necesites, no todas de una.
 - Pide la tasa cuando te haga falta para calcular; si no la sabe, dile dónde mirarla
   (estado de cuenta: "interés vigente" o "tasa rotativa") y avanza con lo que haya.
+
+TARJETAS: cuando aparezca una tarjeta, junta con el tiempo (no todo de golpe) el total
+facturado del mes, el pago mínimo y la tasa. La meta del usuario es dejarla en 100%
+pagada para tener el cupo libre; si compra con la tarjeta, lo sano es pagarlo con la
+plata que tiene, no arrastrarlo al rotativo.
+
+PAGOS Y AHORROS SON SALIDAS DE PLATA: pagar una tarjeta con registrar_pago_deuda y
+apartar plata con registrar_ahorro no son "gastos" de consumo, pero igual descuentan del
+saldo disponible. Si el usuario dice que pagó la tarjeta, usa registrar_pago_deuda (no
+registrar_gasto), y si dice que guardó plata, usa registrar_ahorro.
 
 GASTOS PUNTUALES ("¿puedo gastar X?", "¿cuánto le regalo a…?"): usa puedo_gastar, que
 mira el flujo real hasta el próximo sueldo. Da un monto concreto y di qué se aprieta si

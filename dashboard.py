@@ -26,7 +26,10 @@ from db import (
     total_ahorrado_meta,
     total_ahorrado_meta_mes,
     total_ahorro_mes,
+    total_ahorro_rango,
     total_ingresos_variables_rango,
+    total_pagos_deuda_mes,
+    total_pagos_deuda_rango,
 )
 
 MIN_DIAS_PROYECCION = 4
@@ -140,7 +143,9 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
     fijos = fijos or []
     ingreso = ingreso_mensual_total(user_id, anio, mes)
     ahorro_reg = total_ahorro_mes(user_id, anio, mes)
-    balance = ingreso - gasto_total
+    pagos_deuda_mes = total_pagos_deuda_mes(user_id, anio, mes)
+    balance = ingreso - gasto_total - pagos_deuda_mes
+    salidas_extra = {"ahorro": 0, "pagos_deuda": pagos_deuda_mes}
 
     grupos = {"necesidades": 0, "deseos": 0}
     for cat, d in por_categoria.items():
@@ -168,7 +173,13 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
             fin_mes = date(anio, mes, calendar.monthrange(anio, mes)[1])
             gastado_desde = gastos_rango(user_id, f_saldo, fin_mes)["total"]
             ingresado_desde = total_ingresos_variables_rango(user_id, f_saldo, fin_mes)
-            balance = p["saldo_inicial"] + ingresado_desde - gastado_desde
+            # Pagar una deuda y apartar ahorro no son "gastos", pero sí sacan plata de
+            # la cuenta: si no se restan, el saldo mostrado no existe.
+            ahorrado_desde = total_ahorro_rango(user_id, f_saldo, fin_mes)
+            pagado_deuda_desde = total_pagos_deuda_rango(user_id, f_saldo, fin_mes)
+            balance = (p["saldo_inicial"] + ingresado_desde - gastado_desde
+                       - ahorrado_desde - pagado_deuda_desde)
+            salidas_extra = {"ahorro": ahorrado_desde, "pagos_deuda": pagado_deuda_desde}
             tasa_ahorro = None
             disponible = None
 
@@ -180,13 +191,13 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
     ]
 
     presupuestos = []
-    for p in listar_presupuestos(user_id):
-        gastado = por_categoria.get(p["categoria"], {}).get("total", 0)
+    for ppto in listar_presupuestos(user_id):
+        gastado = por_categoria.get(ppto["categoria"], {}).get("total", 0)
         presupuestos.append({
-            "categoria": p["categoria"],
-            "monto": p["monto"],
+            "categoria": ppto["categoria"],
+            "monto": ppto["monto"],
             "gastado": gastado,
-            "pct": min(999, round(gastado / p["monto"] * 100)) if p["monto"] else None,
+            "pct": min(999, round(gastado / ppto["monto"] * 100)) if ppto["monto"] else None,
         })
     presupuestos.sort(key=lambda x: -(x["pct"] or 0))
 
@@ -201,6 +212,8 @@ def _finanzas(user_id: int, anio: int, mes: int, gasto_total: int,
         "deficit": (ingreso > 0 or modo_arranque) and balance < 0,
         "sin_ingreso": ingreso == 0,
         "modo_arranque": modo_arranque,
+        "salidas_extra": salidas_extra,
+        "pagos_deuda_mes": pagos_deuda_mes,
         "saldo_inicial": p.get("saldo_inicial") if modo_arranque else None,
         "regla": regla,
         "reparto": reparto,
@@ -354,6 +367,10 @@ def _deudas(user_id: int) -> dict:
         "tasa_anual_pct": round(tasa_anual(d["tasa_mensual"]) * 100, 1),
         "cae_pct": round(d["cae"] * 100, 2) if d["cae"] else None,
         "interes_mes": interes_del_mes(d["saldo"], d["tasa_mensual"]),
+        "total_facturado": d["total_facturado"],
+        "pago_minimo": d["pago_minimo"],
+        "pagado": d["pagado"],
+        "pct_pagado": d["pct_pagado"],
     } for d in lineas]
     return {
         "items": items,

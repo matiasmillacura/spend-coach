@@ -260,9 +260,12 @@ def plan_mensual(deudas: list[dict], excedente: int, colchon_actual: int = 0,
     if perfil_riesgo:
         reparto_colchon = perfil(perfil_riesgo)["reparto_colchon"]
     activas = orden_avalancha(deudas)
+    # Si el usuario informó el mínimo real de su estado de cuenta, se usa ese;
+    # si no, se estima como un 5% del saldo.
     minimos = [{"deuda": d.get("nombre", "deuda"), "linea_id": d.get("id"),
-                "monto": pago_minimo_sugerido(int(d["saldo"]),
-                                              float(d.get("pct_minimo") or 0.05))}
+                "monto": int(d["minimo_real"]) if d.get("minimo_real")
+                         else pago_minimo_sugerido(int(d["saldo"]),
+                                                   float(d.get("pct_minimo") or 0.05))}
                for d in activas]
     total_minimos = sum(m["monto"] for m in minimos)
     restante = excedente - total_minimos

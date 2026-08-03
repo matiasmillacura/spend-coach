@@ -15,6 +15,18 @@ function el(tag, attrs = {}, text) {
   return n;
 }
 
+
+// Crea un <svg><use href="#i-nombre"> del sprite (los íconos viven en index.html).
+function svgIcono(nombre, clase) {
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("class", "ic" + (clase ? " " + clase : ""));
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVGNS, "use");
+  use.setAttribute("href", "#i-" + nombre);
+  svg.appendChild(use);
+  return svg;
+}
+
 function animateCLP(elem, target) {
   const to = Math.round(target || 0);
   const from = Number(elem.dataset.v || 0);
@@ -381,6 +393,9 @@ async function enviarAlCoach(texto, opts = {}) {
     pensando.remove();
     if (data.ok) {
       burbuja(data.reply, "bubble--bot");
+      // El coach pudo registrar o corregir algo: el dashboard detrás queda al día
+      // sin que el usuario tenga que refrescar.
+      cargarDashboard();
     } else {
       burbuja("⚠️ " + (data.error || "No pude responder ahora."), "bubble--err");
     }
@@ -635,6 +650,24 @@ function renderDeudas(d) {
     val.textContent = formatCLP(x.saldo);
     li.append(dot, name, val);
     ul.appendChild(li);
+
+    // Avance del pago del período: la meta es llegar al 100% y liberar el cupo.
+    if (x.total_facturado) {
+      const prog = document.createElement("li");
+      prog.className = "deuda-progreso";
+      const barra = document.createElement("div");
+      barra.className = "deuda-progreso__bar";
+      const fill = document.createElement("div");
+      fill.className = "deuda-progreso__fill";
+      requestAnimationFrame(() => { fill.style.width = (x.pct_pagado || 0) + "%"; });
+      barra.appendChild(fill);
+      const txt = document.createElement("span");
+      txt.className = "deuda-progreso__txt";
+      txt.textContent = `${x.pct_pagado || 0}% pagado de ${formatCLP(x.total_facturado)}` +
+        (x.pago_minimo ? ` · mínimo ${formatCLP(x.pago_minimo)}` : "");
+      prog.append(barra, txt);
+      ul.appendChild(prog);
+    }
   }
 }
 
@@ -809,6 +842,10 @@ function renderDonut(d) {
     offset += frac * circ;
 
     const li = document.createElement("li");
+    li.className = "legend__item";
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.title = "Ver el detalle de " + c.categoria;
     const dot = document.createElement("span");
     dot.className = "dot";
     dot.style.background = c.color;
@@ -822,6 +859,12 @@ function renderDonut(d) {
     pct.className = "pct";
     pct.textContent = c.pct + "%";
     li.append(dot, name, val, pct);
+    li.appendChild(svgIcono("chevron_right", "legend__chevron"));
+    const abrir = () => abrirDetalleCategoria(c.categoria);
+    li.addEventListener("click", abrir);
+    li.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); }
+    });
     legend.appendChild(li);
   }
 }
@@ -893,6 +936,137 @@ async function cargarCoach() {
   } catch (e) {
     box.textContent = "No pude conectar con el coach.";
   }
+}
+
+
+// ---------- detalle de una categoría (ver y corregir) ----------
+const hojaDetalle = $("#detalle");
+let categoriaAbierta = null;
+
+function cerrarDetalle() {
+  hojaDetalle.classList.remove("open");
+  hojaDetalle.setAttribute("aria-hidden", "true");
+  categoriaAbierta = null;
+}
+$("#detalle-cerrar").addEventListener("click", cerrarDetalle);
+$("#detalle-fondo").addEventListener("click", cerrarDetalle);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && hojaDetalle.classList.contains("open")) cerrarDetalle();
+});
+
+async function abrirDetalleCategoria(categoria) {
+  categoriaAbierta = categoria;
+  hojaDetalle.classList.add("open");
+  hojaDetalle.setAttribute("aria-hidden", "false");
+  $("#detalle-titulo").textContent = categoria;
+  const cuerpo = $("#detalle-cuerpo");
+  cuerpo.innerHTML = "";
+  cuerpo.appendChild(document.createTextNode("Cargando…"));
+  try {
+    const mes = mesVista || new Date().toISOString().slice(0, 7);
+    const res = await api(`/api/gastos/${encodeURIComponent(categoria)}?mes=${mes}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    pintarDetalle(data);
+  } catch (e) {
+    cuerpo.innerHTML = "";
+    cuerpo.appendChild(document.createTextNode("No pude cargar el detalle."));
+  }
+}
+
+function pintarDetalle(data) {
+  const cuerpo = $("#detalle-cuerpo");
+  cuerpo.innerHTML = "";
+  $("#detalle-total").textContent = formatCLP(data.total);
+
+  if (!data.gastos.length && !data.fijos.length) {
+    const p = document.createElement("p");
+    p.className = "caption";
+    p.textContent = "No hay gastos de esta categoría en el mes.";
+    cuerpo.appendChild(p);
+    return;
+  }
+
+  for (const g of data.gastos) cuerpo.appendChild(filaGasto(g, data.categorias));
+
+  for (const f of data.fijos) {
+    const fila = document.createElement("div");
+    fila.className = "gasto gasto--fijo";
+    const desc = document.createElement("span");
+    desc.className = "gasto__desc";
+    desc.textContent = f.descripcion + " (fijo mensual)";
+    const monto = document.createElement("span");
+    monto.className = "gasto__monto";
+    monto.textContent = formatCLP(f.monto);
+    fila.append(desc, monto);
+    cuerpo.appendChild(fila);
+  }
+}
+
+function filaGasto(g, categorias) {
+  const fila = document.createElement("div");
+  fila.className = "gasto";
+
+  const desc = document.createElement("input");
+  desc.className = "gasto__input";
+  desc.value = g.descripcion || "";
+  desc.setAttribute("aria-label", "Descripción del gasto");
+
+  const sel = document.createElement("select");
+  sel.className = "gasto__select";
+  sel.setAttribute("aria-label", "Categoría del gasto");
+  for (const c of categorias) {
+    const op = document.createElement("option");
+    op.value = c;
+    op.textContent = c;
+    if (c === g.categoria) op.selected = true;
+    sel.appendChild(op);
+  }
+
+  const monto = document.createElement("span");
+  monto.className = "gasto__monto";
+  monto.textContent = formatCLP(g.monto);
+
+  const fecha = document.createElement("span");
+  fecha.className = "gasto__fecha";
+  fecha.textContent = (g.fecha || "").slice(8, 10) + "/" + (g.fecha || "").slice(5, 7);
+
+  const borrar = document.createElement("button");
+  borrar.className = "gasto__borrar";
+  borrar.type = "button";
+  borrar.setAttribute("aria-label", "Eliminar gasto");
+  borrar.textContent = "×";
+
+  const guardar = async (campos) => {
+    fila.classList.add("gasto--guardando");
+    try {
+      const res = await api(`/api/gasto/${g.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(campos),
+      });
+      const data = await res.json();
+      fila.classList.toggle("gasto--error", !data.ok);
+      if (data.ok) {
+        fila.classList.add("gasto--ok");
+        setTimeout(() => fila.classList.remove("gasto--ok"), 900);
+        cargarDashboard();
+        if (campos.categoria && campos.categoria !== categoriaAbierta) fila.remove();
+      }
+    } finally {
+      fila.classList.remove("gasto--guardando");
+    }
+  };
+
+  desc.addEventListener("change", () => guardar({ descripcion: desc.value.trim() }));
+  sel.addEventListener("change", () => guardar({ categoria: sel.value }));
+  borrar.addEventListener("click", async () => {
+    const res = await api(`/api/gasto/${g.id}`, { method: "DELETE" });
+    if ((await res.json()).ok) { fila.remove(); cargarDashboard(); }
+  });
+
+  fila.append(desc, sel, monto, fecha, borrar);
+  return fila;
 }
 
 // ---------- arranque ----------

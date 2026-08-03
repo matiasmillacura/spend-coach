@@ -31,6 +31,7 @@
 <body>
 
   <svg class="sprite" aria-hidden="true" focusable="false"><defs>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
     <symbol id="i-chevron_left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
     <symbol id="i-chevron_right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
     <symbol id="i-arrow_back" viewBox="0 0 24 24"><path d="M19 12H5m0 0l6-6m-6 6l6 6"/></symbol>
@@ -325,6 +326,23 @@
     <button id="fab-chat" class="fab" aria-label="Registrar con tu coach">
       <svg class="ic fab__icon" aria-hidden="true"><use href="#i-chat_bubble"/></svg><span class="fab__label">Registrar</span>
     </button>
+
+    <div id="detalle" class="hoja" aria-hidden="true">
+      <div id="detalle-fondo" class="hoja__fondo"></div>
+      <section class="hoja__panel" role="dialog" aria-label="Detalle de la categoría">
+        <header class="hoja__top">
+          <div class="hoja__enc">
+            <h2 id="detalle-titulo" class="hoja__titulo">categoría</h2>
+            <p class="hoja__sub">Corrige el nombre o la categoría si quedó mal</p>
+          </div>
+          <span id="detalle-total" class="badge badge--neutral">$0</span>
+          <button id="detalle-cerrar" class="icon-btn" aria-label="Cerrar">
+            <svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>
+          </button>
+        </header>
+        <div id="detalle-cuerpo" class="hoja__cuerpo"></div>
+      </section>
+    </div>
 
     <section id="view-chat" class="chat" aria-hidden="true">
       <header class="chat__top">

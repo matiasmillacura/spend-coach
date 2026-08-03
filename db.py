@@ -252,6 +252,9 @@ class LineaDeuda(Base):
     modalidad: Mapped[str] = mapped_column(String(20), nullable=False, default="rotativo")
     descripcion: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     saldo: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Total facturado del período y mínimo exigido: lo que viene en el estado de cuenta.
+    total_facturado: Mapped[int | None] = mapped_column(Integer)
+    pago_minimo: Mapped[int | None] = mapped_column(Integer)
     tasa_mensual: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     cae: Mapped[float | None] = mapped_column(Float)
     cuotas_totales: Mapped[int | None] = mapped_column(Integer)
@@ -325,6 +328,12 @@ def init_db() -> None:
             "perfil_riesgo": "VARCHAR(20)",
             "ahorro_previo": "INTEGER",
         }
+        if insp.has_table("lineas_deuda"):
+            cols_ld = [c["name"] for c in insp.get_columns("lineas_deuda")]
+            with engine.begin() as conn:
+                for col in ("total_facturado", "pago_minimo"):
+                    if col not in cols_ld:
+                        conn.execute(text(f"ALTER TABLE lineas_deuda ADD COLUMN {col} INTEGER"))
         if insp.has_table("ingresos_fijos"):
             cols_if = [c["name"] for c in insp.get_columns("ingresos_fijos")]
             if "dia_pago" not in cols_if:
@@ -1166,7 +1175,8 @@ def listar_tarjetas(user_id: int) -> list[dict]:
 
 def registrar_deuda(user_id: int, saldo: int, tasa_mensual: float, modalidad: str = "rotativo",
                     descripcion: str = "", tarjeta_id: int | None = None, cae: float | None = None,
-                    cuotas_totales=None, cuotas_pagadas=None) -> dict:
+                    cuotas_totales=None, cuotas_pagadas=None, total_facturado=None,
+                    pago_minimo=None) -> dict:
     """Crea o actualiza la línea de deuda de esa tarjeta y modalidad."""
     saldo = int(saldo)
     if saldo < 0:
@@ -1191,6 +1201,10 @@ def registrar_deuda(user_id: int, saldo: int, tasa_mensual: float, modalidad: st
             linea.cuotas_totales = int(cuotas_totales)
         if cuotas_pagadas is not None:
             linea.cuotas_pagadas = int(cuotas_pagadas)
+        if total_facturado is not None:
+            linea.total_facturado = max(0, int(total_facturado))
+        if pago_minimo is not None:
+            linea.pago_minimo = max(0, int(pago_minimo))
         linea.actualizado_en = datetime.utcnow()
         s.flush()
         return _linea_dict(linea, s)
@@ -1242,6 +1256,39 @@ def registrar_pago_deuda(user_id: int, linea_id: int, monto: int, fecha=None,
         return {"pago_id": p.id, "saldo_restante": linea.saldo, "liquidada": not linea.activa}
 
 
+def total_pagos_deuda_mes(user_id: int, anio: int, mes: int) -> int:
+    ini, fin = _rango_mes(anio, mes)
+    return total_pagos_deuda_rango(user_id, ini, fin)
+
+
+def total_pagos_deuda_rango(user_id: int, ini, fin) -> int:
+    """Lo abonado a deudas en el período: es plata que salió de la cuenta."""
+    with session_scope() as s:
+        return int(s.scalar(select(func.coalesce(func.sum(PagoDeuda.monto), 0)).where(
+            PagoDeuda.user_id == user_id,
+            PagoDeuda.fecha >= _a_fecha(ini), PagoDeuda.fecha <= _a_fecha(fin))) or 0)
+
+
+def total_ahorro_rango(user_id: int, ini, fin) -> int:
+    """Lo apartado a ahorro en el período: sale de la cuenta aunque no sea un gasto."""
+    with session_scope() as s:
+        return int(s.scalar(select(func.coalesce(func.sum(Ahorro.monto), 0)).where(
+            Ahorro.user_id == user_id,
+            Ahorro.fecha >= _a_fecha(ini), Ahorro.fecha <= _a_fecha(fin))) or 0)
+
+
+def gastos_por_categoria_detalle(user_id: int, categoria: str, anio: int, mes: int) -> list[dict]:
+    """Gastos de una categoría en el mes, para el desglose que se puede corregir."""
+    ini, fin = _rango_mes(anio, mes)
+    with session_scope() as s:
+        filas = s.scalars(
+            select(Gasto).where(Gasto.user_id == user_id, Gasto.categoria == categoria,
+                                Gasto.fecha >= ini, Gasto.fecha <= fin)
+            .order_by(Gasto.fecha.desc(), Gasto.id.desc())
+        ).all()
+        return [_gasto_dict(g) for g in filas]
+
+
 def _tarjeta_dict(t: Tarjeta) -> dict:
     return {"id": t.id, "institucion": t.institucion, "dia_corte": t.dia_corte,
             "dia_vencimiento": t.dia_vencimiento, "cupo": t.cupo}
@@ -1253,9 +1300,20 @@ def _linea_dict(l: LineaDeuda, s: Session | None = None) -> dict:
         t = s.get(Tarjeta, l.tarjeta_id)
         institucion = t.institucion if t else None
     nombre = f"{institucion} {l.modalidad}".strip() if institucion else (l.descripcion or l.modalidad)
+    pagado = 0
+    if s is not None:
+        pagado = int(s.scalar(select(func.coalesce(func.sum(PagoDeuda.monto), 0)).where(
+            PagoDeuda.linea_id == l.id)) or 0)
+    facturado = l.total_facturado
+    # Meta del usuario: llegar al 100% pagado para tener el cupo libre otra vez.
+    pct_pagado = None
+    if facturado:
+        pct_pagado = min(100, round(pagado / facturado * 100))
     return {"id": l.id, "tarjeta_id": l.tarjeta_id, "institucion": institucion,
             "modalidad": l.modalidad, "nombre": nombre, "descripcion": l.descripcion,
             "saldo": l.saldo, "tasa_mensual": l.tasa_mensual, "cae": l.cae,
+            "total_facturado": facturado, "pago_minimo": l.pago_minimo,
+            "pagado": pagado, "pct_pagado": pct_pagado,
             "cuotas_totales": l.cuotas_totales, "cuotas_pagadas": l.cuotas_pagadas,
             "activa": l.activa}
 
