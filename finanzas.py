@@ -219,6 +219,12 @@ def puedo_gastar(monto_propuesto: int | None, disponible: int, metas: list[dict]
                       f"disponible."}
 
 
+def _en_dias(n: int) -> str:
+    if n <= 0:
+        return "Hoy"
+    return "Mañana" if n == 1 else f"En {n} días"
+
+
 def alertas_tarjeta(dia_corte: int | None, dia_vencimiento: int | None, hoy: date,
                     dias_aviso: int = 5) -> list[dict]:
     """Avisos de corte y vencimiento. Comprar justo después del corte financia gratis
@@ -230,14 +236,14 @@ def alertas_tarjeta(dia_corte: int | None, dia_vencimiento: int | None, hoy: dat
         faltan = (corte - hoy).days
         if faltan <= dias_aviso:
             avisos.append({"tipo": "corte", "fecha": corte.isoformat(), "dias": faltan,
-                           "mensaje": f"En {faltan} días es el corte: lo que compres después "
-                                      f"se paga el mes siguiente."})
+                           "mensaje": f"{_en_dias(faltan)} es el corte: lo que compres "
+                                      f"después se paga el mes siguiente."})
     if venc:
         faltan = (venc - hoy).days
         if faltan <= dias_aviso:
             avisos.append({"tipo": "vencimiento", "fecha": venc.isoformat(), "dias": faltan,
-                           "mensaje": f"En {faltan} días vence el pago. Caer en mora es lo "
-                                      f"más caro que hay."})
+                           "mensaje": f"{_en_dias(faltan)} vence el pago. Caer en mora es "
+                                      f"lo más caro que hay."})
     return avisos
 
 

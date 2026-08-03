@@ -270,6 +270,23 @@ const chatForm = $("#chat-form");
 const chatInput = $("#chat-input");
 let chatCargado = false;
 
+// El campo crece con el texto hasta un tope y después hace scroll: en el celular
+// escribir tres líneas y ver solo la última es incómodo.
+const ALTO_MAX_COMPOSER = 132;
+function ajustarAltoInput() {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, ALTO_MAX_COMPOSER) + "px";
+  chatInput.style.overflowY = chatInput.scrollHeight > ALTO_MAX_COMPOSER ? "auto" : "hidden";
+}
+chatInput.addEventListener("input", ajustarAltoInput);
+chatInput.addEventListener("keydown", (e) => {
+  // Enter envía; Shift+Enter (y el salto de línea del teclado móvil) hace párrafo.
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    chatForm.requestSubmit();
+  }
+});
+
 // Pinta **negrita** como <strong> construyendo nodos: nunca innerHTML, así el texto del
 // modelo no puede inyectar HTML.
 function pintarTexto(el, texto) {
@@ -378,6 +395,7 @@ chatForm.addEventListener("submit", (e) => {
   const texto = chatInput.value.trim();
   if (!texto) return;
   chatInput.value = "";
+  ajustarAltoInput();
   enviarAlCoach(texto);
 });
 
@@ -392,6 +410,7 @@ fotoInput.addEventListener("change", async () => {
     const { b64, thumbUrl } = await comprimirImagen(file);
     const texto = chatInput.value.trim();
     chatInput.value = "";
+    ajustarAltoInput();
     enviarAlCoach(texto, { imagenB64: b64, imagenTipo: "image/jpeg", thumbUrl });
   } catch (e) {
     burbuja("⚠️ No pude leer esa imagen. Intenta con otra foto.", "bubble--err");
@@ -877,15 +896,6 @@ async function cargarCoach() {
 }
 
 // ---------- arranque ----------
-if (document.fonts && document.fonts.ready) {
-  document.fonts.ready.then(() => {
-    if (document.fonts.check('24px "Material Symbols Rounded"')) {
-      document.documentElement.classList.add("iconos-ok");
-    }
-  }).catch(() => {});
-} else {
-  document.documentElement.classList.add("iconos-ok");
-}
 
 checkAuth();
 if ("serviceWorker" in navigator) {

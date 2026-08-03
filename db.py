@@ -1007,6 +1007,55 @@ def set_regla(user_id: int, pct_necesidades: int, pct_deseos: int, pct_ahorro: i
         return {"pct_necesidades": n, "pct_deseos": d, "pct_ahorro": a}
 
 
+TABLAS_USUARIO = [
+    "pagos_deuda", "lineas_deuda", "tarjetas", "eventos_futuros", "ahorros",
+    "metas_ahorro", "presupuestos_categoria", "regla_presupuesto", "gastos_fijos",
+    "ingresos_fijos", "ingresos", "gastos", "mensajes",
+]
+
+
+def borrar_usuario(user_id: int) -> dict:
+    """Borra la cuenta y TODO lo asociado, sin vuelta atrás.
+
+    Incluye la memoria del agente (checkpoints de LangGraph) y el índice semántico:
+    si quedaran, un usuario nuevo con el mismo id heredaría conversaciones ajenas y
+    el asesor mezclaría datos que ya no existen.
+    """
+    # Se consultan las tablas existentes antes de borrar: en Postgres una sentencia
+    # fallida aborta la transacción completa, así que no sirve intentar y capturar.
+    existentes = set(sqla_inspect(engine).get_table_names())
+    borrado = {}
+    with engine.begin() as conn:
+        for tabla in TABLAS_USUARIO:
+            if tabla not in existentes:
+                continue
+            r = conn.execute(text(f"DELETE FROM {tabla} WHERE user_id = :u"), {"u": user_id})
+            if r.rowcount:
+                borrado[tabla] = r.rowcount
+        for tabla in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+            if tabla not in existentes:
+                continue
+            r = conn.execute(text(f"DELETE FROM {tabla} WHERE thread_id = :u"),
+                             {"u": str(user_id)})
+            if r.rowcount:
+                borrado[tabla] = r.rowcount
+        if "langchain_pg_embedding" in existentes:
+            r = conn.execute(
+                text("DELETE FROM langchain_pg_embedding WHERE cmetadata->>'user_id' = :u"),
+                {"u": str(user_id)})
+            if r.rowcount:
+                borrado["langchain_pg_embedding"] = r.rowcount
+        r = conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
+        borrado["users"] = r.rowcount
+    return borrado
+
+
+def buscar_usuario_por_email(email: str) -> dict | None:
+    with session_scope() as s:
+        u = s.scalar(select(User).where(func.lower(User.email) == (email or "").strip().lower()))
+        return {"id": u.id, "email": u.email, "nombre": u.nombre} if u else None
+
+
 PERFILES_RIESGO = ["conservador", "equilibrado", "gustito"]
 
 

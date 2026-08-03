@@ -30,3 +30,23 @@ def test_rut_duplicado_rechazado():
         assert False, "debió lanzar ValueError"
     except ValueError:
         pass
+
+
+def test_borrar_usuario_no_toca_a_los_demas():
+    victima = _usuario("borrar-a@test.cl", "7000006-7")
+    testigo = _usuario("borrar-b@test.cl", "7000007-5")
+    for uid in (victima, testigo):
+        db.agregar_gasto(uid, 5000, "comida", "almuerzo", "2026-08-01", "")
+        db.agregar_ingreso_fijo(uid, "sueldo", 800_000)
+        db.agregar_mensaje(uid, "user", "hola")
+
+    borrado = db.borrar_usuario(victima)
+
+    assert borrado["users"] == 1
+    assert borrado["gastos"] == 1
+    assert db.buscar_usuario_por_email("borrar-a@test.cl") is None
+    assert db.ultimos_gastos(victima, 10) == []
+    # el otro usuario queda intacto
+    assert db.buscar_usuario_por_email("borrar-b@test.cl") is not None
+    assert len(db.ultimos_gastos(testigo, 10)) == 1
+    assert len(db.listar_ingresos_fijos(testigo)) == 1
